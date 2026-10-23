@@ -207,3 +207,9 @@ the thing that actually drifted.
   Staying at `reviewing` rather than being marked done. The four open criteria — `next` acting
   on the top item, the two-round cap, an escalation arriving as one question, and `status`
   proposing a diff — close the first time each is genuinely exercised, not before.
+- 2026-10-23 Fixed a defect round 1 noted but left as an observation: `/factory review` spawned
+  its reviewers by agent type, and those types are only registered when a session loads
+  `.claude/agents/` — which a fresh clone, a reloaded session and `/reload-skills` all fail to
+  do. Spawning by type therefore failed outright, twice, and the review would silently not
+  happen. It now spawns general-purpose agents and tells each to read its reviewer definition
+  from disk, which works either way and keeps the definitions the single source of truth.
