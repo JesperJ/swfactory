@@ -125,9 +125,15 @@ test("a session in a repo the factory does not track never reaches Next", () => 
   assert.deepEqual(rankNext([project("shop", [])], [s], NOW), []);
 });
 
-test("a tracked session with no feature is named after its project", () => {
+test("a blocked session still ranks even with no feature attached", () => {
   const s = session({ id: "s1", status: "needs_you", project: "shop" });
   const [top] = rankNext([project("shop", [])], [s], NOW);
   assert.equal(top.title, "shop session");
-  assert.equal(top.project, "shop");
+  assert.equal(top.action, "Answer");
+});
+
+test("a finished session with no feature is left to the Inbox", () => {
+  // Usually the session you are currently typing in; recommending it is noise.
+  const s = session({ id: "s1", status: "your_turn", project: "shop" });
+  assert.deepEqual(rankNext([project("shop", [])], [s], NOW), []);
 });

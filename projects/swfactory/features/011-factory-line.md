@@ -1,6 +1,6 @@
 ---
 title: The factory line
-status: specced
+status: planned
 priority: P1
 summary: One /factory command, a review stage before done, and an approver that absorbs the decisions that don't need me.
 ---
@@ -96,9 +96,64 @@ not to remove the last decision. Merging stays mine, with the findings already a
 - Assumed review findings live in `reviews/` beside `decisions/`, in git, so a rework round can
   cite the previous one.
 
+## Plan
+Three parts, in this order, because each is useful alone and the later ones depend on the
+earlier.
+
+**1. The `reviewing` status.** Touch the four places the lifecycle is spelled out:
+`FEATURE_STATUSES` in `src/specs.ts`, `STATUS_ORDER` in `public/app.js`, a `--st-reviewing`
+token plus `.st-reviewing` rule in `public/styles.css`, and a `reviewing` case in
+`featureEntry` in `src/next.ts` ranking between a stalled build (2) and a ready-to-build
+feature (4), so review work is pulled through before new work starts. Covered by the existing
+ranking tests plus one for the new case.
+
+**2. One `/factory` command.** Claude Code gives one file one command, so dispatch happens
+inside it: `.claude/commands/factory.md` reads the first word of `$ARGUMENTS` as the
+sub-command and follows the matching section. The existing `new-feature.md`, `plan.md`,
+`build.md`, `status.md` and `new-project.md` are deleted in the same commit — leaving both
+would mean two ways to do everything and two places to fix a rule. `CLAUDE.md` and `README.md`
+change with them.
+
+`next` resolves its target by reading `/api/state` from the dashboard and taking the top item,
+so the ranking lives in exactly one place rather than being reimplemented in a prompt.
+
+**3. Reviewers and the approver.** Three agent definitions in `.claude/agents/`:
+`review-code.md`, `review-security.md`, `review-ux.md`. `/factory review` spawns all three in
+one message so they run in parallel, each given the feature spec, the diff on its branch, and
+the instruction to judge against the acceptance criteria rather than taste. Each returns
+findings; the command writes them to `<project>/reviews/<NNN>-round-<n>.md`.
+
+The approver is not a fourth agent but the final section of the command, run by the main
+session once findings exist. It holds the pass / rework / escalate decision and the two-round
+cap, because it needs the spec, the findings and the conversation — exactly what a subagent
+would have to be re-told.
+
+Trade-off taken: the sub-command dispatch lives in one long prompt file rather than five small
+ones. Worse to read, but it keeps a single set of rules about statuses and approval, which is
+the thing that actually drifted.
+
+## Tasks
+- [ ] Add `reviewing` to the lifecycle in `specs.ts`, `app.js`, `styles.css`, `next.ts`
+- [ ] Rank `reviewing` above `planned` in `featureEntry`, with a test
+- [ ] Write `.claude/commands/factory.md` with the sub-command sections
+- [ ] `/factory next` reads the dashboard's ranking rather than re-deriving it
+- [ ] `/factory build` ends at `reviewing`, never `done`
+- [ ] Write the three reviewer agents in `.claude/agents/`
+- [ ] `/factory review` runs them in parallel and writes `reviews/<NNN>-round-<n>.md`
+- [ ] Implement approve / rework / escalate with the two-round cap in the command
+- [ ] `/factory status` proposes a diff of stale specs and applies only what is accepted
+- [ ] Delete the five old commands; update `CLAUDE.md` and `README.md`
+- [ ] Dogfood: run the line on 010 end to end and keep the findings file as the example
+
 ## Risks
 - A review stage that always passes is worse than none: it manufactures false confidence. The
   approver must be able to say "not met" about a criterion the builder claims is met, and the
   first few rounds should be checked by hand to see whether it ever does.
 - Two rounds of rework on a wrong plan is a loop that costs real money. Escalation after the
   cap is not a formality.
+
+## Log
+- 2026-10-23 Specced and planned. Three parts, each useful alone: the `reviewing` status, one
+  `/factory` command replacing five, then the reviewers and approver. Chose a single command
+  file over five because the thing that actually drifted was having rules about status and
+  approval in several places.

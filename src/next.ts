@@ -66,6 +66,10 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
     const p = projectOf(s.project);
     if (!p) continue;
     const f = featureOf(p, s.feature);
+    // "A session finished" with no feature attached is not a piece of factory work — often it
+    // is the session you are typing in. The Inbox lists it; Next should not recommend it.
+    // A blocked session still ranks, feature or not, because being stuck is urgent either way.
+    if (!f && s.status === "your_turn") continue;
     items.push({
       kind: s.status === "needs_you" ? "answer" : "review",
       action: s.status === "needs_you" ? "Answer" : "Review",
