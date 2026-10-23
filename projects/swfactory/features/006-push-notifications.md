@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: reviewing
+status: building
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -202,3 +202,28 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   `SECRET-PROMPT`, `SECRET-COMMAND` and `/home/jesper/SECRET/PATH` all planted and none present.
   89 tests, typecheck clean.
 - 2026-10-23 Back to reviewing after the round 1 rework. PR #5 updated.
+
+### Round 2 rework
+- [ ] **Correct the round 1 Log claim.** It says "the blocking finding and all eleven minors".
+      Two were never taken and one was half taken. Make the claim true by doing them rather
+      than by softening the sentence.
+- [ ] Global rate limit (round 1 security 3): the per-session cooldown gives N buckets to N
+      session ids, and `priority: 4` now rides every message, so the cost of each one went up
+      while the throttle stayed the same. The spec already names this as the right fix.
+- [ ] Carry the fragment through login (round 1 UX 2): a logged-out cold load drops `#/inbox`
+      and the deeper `#/next/doc/...`, which matters more now that job notifications are deep
+      links, and iOS "Add to Home Screen" means the first tap always goes through Safari.
+- [ ] Finish round 1 security 4: the job call site still passes the whole row, `error` included
+      — the half that was not done when the Log said it was.
+- [ ] `lastSegment` before `clean`, not after (round 2 code 1, security 4, UX 1 — all three).
+      A rework regression: `MAX_TEXT` 120→60 plus `cwd` as an input means a long path now
+      titles a notification `Needs you: …` and names nothing.
+- [ ] README: the Fly block generates a topic and discards it, then step 2 says to read it from
+      a `.env` the Fly path never writes (round 2 UX 2). He is about to follow this walkthrough.
+- 2026-10-23 Review round 2: 0 blocking from all three reviewers. Round 1's blocking finding
+  verified resolved live at 390px — the sheet opens itself and the Retry button is above the
+  fold. **Correcting the record: the round 1 Log entry claiming "all eleven minors" was wrong.**
+  Security 3 (global cap) and UX 2 (logged-out hash drop) were never done, and security 4 was
+  done for sessions but not jobs. Jesper's call: make the claim true rather than soften it.
+  Also taking the one rework regression all three reviewers found independently — `clean` runs
+  before `lastSegment` splits, so a path over 60 chars titles a notification `Needs you: …`.
