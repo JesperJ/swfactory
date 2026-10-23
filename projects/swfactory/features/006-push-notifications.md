@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: specced
+status: planned
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -73,14 +73,73 @@ These are the calls I made. Each is a decision to overturn, not a question to an
 - **Two triggers only**: `needs_you`, and `failed` jobs.
 - **One topic, no per-device registration.** Whatever is subscribed gets it; there is one user.
 
-<!-- Filled in by /plan -->
 ## Plan
-<Approach, affected files/modules, data changes, risks.>
+Three parts. The trigger rules are a pure function, so the thing most likely to be wrong is the
+thing easiest to test without a network.
+
+**1. `src/notify.ts` — deciding, then sending.** Two separable pieces in one module:
+
+`notificationFor(event)` is pure: given what just happened, it returns a `Notification`
+(`title`, `body`, `click`) or `null`. Every rule in the spec lives here — `needs_you` only,
+never `your_turn`/`working`/`ended`, nothing for a dismissed session, nothing when the status
+did not actually change, and `failed` jobs. It builds the body from project, feature, host and
+command only, so the "no prompt text, no assistant message, no path" criterion is a property of
+the one function that writes the text rather than a rule each caller must remember.
+
+`Notifier` is an interface with one method, so a Web Push sender can sit beside the ntfy one
+later without touching the rules. `fromEnv()` returns an ntfy sender when `NTFY_TOPIC` is set
+and a no-op otherwise — that is how "unconfigured behaves exactly as today" is achieved, rather
+than by scattering `if (enabled)` through the endpoints.
+
+The 10-minute cooldown is a `Map<sessionId, timestamp>` inside the notifier. Deliberately in
+memory: a restart can at most allow one extra notification, which is a far smaller cost than a
+schema change and a migration for state that is worthless after ten minutes.
+
+**2. The two trigger points.** `upsert` in `src/db.ts` already computes `changed` internally but
+returns `void`; it returns `{ session, statusChanged }` instead. `setJobStatus` needs no change —
+`POST /api/jobs/:id/status` already fetches the row for its 404 check, so binding that gives the
+previous status for free.
+
+Both endpoints then call `void notifier.maybeSend(...)` — never awaited. That is what keeps the
+"response is returned in its normal time even when the endpoint is unreachable" criterion true by
+construction: the request path does not depend on the notification at all. The sender carries its
+own timeout and logs failures.
+
+**3. Config and docs.** `NTFY_TOPIC`, `NTFY_SERVER` (default `https://ntfy.sh`), and
+`FACTORY_PUBLIC_URL` for the click target. All optional; absent means no-op. `.env.example`,
+the README and `contrib/` get the phone-side walkthrough.
+
+Trade-off taken: ntfy over Web Push, which the spec already argues from the HTTPS constraint.
+Recorded separately because it puts session metadata through a third party, and that deserves to
+be a decision someone can find later rather than a line in a plan.
+
+Risk worth naming: the cooldown is per session, so two different sessions blocking at once still
+produce two notifications. That is correct — they are two things needing you — but it means a
+busy moment can still buzz repeatedly, and the spec's own "train me to ignore the channel" worry
+applies. If that happens, the fix is a global rate limit, not a longer per-session cooldown.
 
 ## Tasks
-- [ ] <Small, independently verifiable step>
+- [ ] `notificationFor` in `src/notify.ts`: the pure trigger rules, with tests covering every
+      criterion (needs_you only, no repeat on unchanged status, dismissed produces nothing,
+      failed jobs, and no prompt text or path in the body)
+- [ ] The `Notifier` interface, the ntfy sender with its own timeout, and the no-op `fromEnv`
+      returns when `NTFY_TOPIC` is unset
+- [ ] The per-session cooldown, with a test for the flap case
+- [ ] `upsert` returns `{ session, statusChanged }`; wire `POST /api/hooks` to the notifier
+- [ ] Wire `POST /api/jobs/:id/status`, binding the row it already fetches for its 404 check
+- [ ] A test that both endpoints keep their response and timing when the sender throws or hangs
+- [ ] `.env.example`, README and the ntfy walkthrough; record the ntfy-over-Web-Push decision
+- [ ] Dogfood: subscribe the phone, make a live session hit a permission prompt, fail a job
 
 ## Log
 - 2026-10-23 Specced. Mechanism changed from Web Push to ntfy: Web Push needs a secure context
   and the dashboard is LAN-only HTTP with 004 deferred. Added failed jobs as a second trigger —
   a job queued from the phone can fail with nothing on screen to show it.
+- 2026-10-23 Planned. The trigger rules become one pure function, so the part most likely to be
+  wrong is the part testable without a network, and the "no prompt text, no path" rule is a
+  property of the single function that writes the body rather than something each call site must
+  remember. Both endpoints fire the notifier without awaiting it, which is what makes "the
+  response is unaffected when the endpoint hangs" true by construction rather than by timeout
+  tuning. Neither trigger point has more than one caller, so the wiring is small.
+  Recorded `decisions/2026-10-23-ntfy-over-web-push.md`, because routing session metadata through
+  a third party deserves to be findable later rather than buried in a plan. 8 tasks.
