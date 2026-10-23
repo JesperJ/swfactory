@@ -152,10 +152,14 @@ export function ntfySender(cfg: {
   };
 }
 
+// One stuck session must not be able to buzz the phone every time it restates itself.
+export const COOLDOWN_MS = 10 * 60_000;
+
 export interface NotifierOptions {
   sender?: Sender | null;
   baseUrl?: string | null;
   log?: (msg: string) => void;
+  now?: () => number;
 }
 
 // What the endpoints hold. Unconfigured, it has no sender and sends nothing — which is how
@@ -165,11 +169,29 @@ export class Notifier {
   private readonly sender: Sender | null;
   private readonly baseUrl: string | null;
   private readonly log: (msg: string) => void;
+  private readonly now: () => number;
+  // In memory on purpose: a restart can at most allow one extra notification, which is a far
+  // smaller cost than a schema change and a migration for state that is worthless after ten
+  // minutes. Expired entries are pruned on use, so the map holds roughly the sessions that
+  // blocked in the last ten minutes.
+  private readonly lastSent = new Map<string, number>();
 
   constructor(opts: NotifierOptions = {}) {
     this.sender = opts.sender ?? null;
     this.baseUrl = opts.baseUrl ?? null;
     this.log = opts.log ?? ((msg) => console.error(msg));
+    this.now = opts.now ?? Date.now;
+  }
+
+  private cooling(sessionId: string): boolean {
+    const now = this.now();
+    for (const [id, at] of this.lastSent) if (now - at >= COOLDOWN_MS) this.lastSent.delete(id);
+    const at = this.lastSent.get(sessionId);
+    if (at !== undefined && now - at < COOLDOWN_MS) return true;
+    // Recorded on the attempt, not on success: a push that failed is not worth retrying ten
+    // minutes later, and the next real status change will notify anyway.
+    this.lastSent.set(sessionId, now);
+    return false;
   }
 
   get enabled(): boolean {
@@ -183,6 +205,10 @@ export class Notifier {
     try {
       const n = notificationFor(event, this.baseUrl);
       if (!n) return;
+      // A session that flaps needs_you → working → needs_you is the same stuck session, not a
+      // second thing to know about. Jobs are not cooled: `failed` is terminal so there is only
+      // ever one per job, and two jobs failing at once are two things to know about.
+      if (event.kind === "session" && this.cooling(event.session.id)) return;
       void this.sender
         .send(n)
         .catch((err: unknown) => this.log(`[notify] send failed: ${(err as Error).message}`));

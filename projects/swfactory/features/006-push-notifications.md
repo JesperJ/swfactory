@@ -124,7 +124,7 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
       failed jobs, and no prompt text or path in the body)
 - [x] The `Notifier` interface, the ntfy sender with its own timeout, and the no-op `fromEnv`
       returns when `NTFY_TOPIC` is unset
-- [ ] The per-session cooldown, with a test for the flap case
+- [x] The per-session cooldown, with a test for the flap case
 - [ ] `upsert` returns `{ session, statusChanged }`; wire `POST /api/hooks` to the notifier
 - [ ] Wire `POST /api/jobs/:id/status`, binding the row it already fetches for its 404 check
 - [ ] A test that both endpoints keep their response and timing when the sender throws or hangs

@@ -218,3 +218,50 @@ test("the notifier applies the same rules as notificationFor", () => {
   n.maybeSend(job());
   assert.equal(s.sent.length, 1);
 });
+
+// --- cooldown ---------------------------------------------------------------
+
+import { COOLDOWN_MS } from "../src/notify.ts";
+
+function cooled(start = 0) {
+  const clock = { t: start };
+  const s = spy();
+  return { clock, sent: s.sent, n: new Notifier({ sender: s, baseUrl: BASE, now: () => clock.t }) };
+}
+
+test("a session flapping needs_you → working → needs_you notifies once, not twice", () => {
+  const { clock, sent, n } = cooled();
+  n.maybeSend(session());
+  clock.t += 30_000;
+  n.maybeSend(session({ status: "working" }));
+  clock.t += 30_000;
+  n.maybeSend(session());
+  assert.equal(sent.length, 1, "the same stuck session is not a second thing to know about");
+});
+
+test("past the cooldown the same session can notify again", () => {
+  const { clock, sent, n } = cooled();
+  n.maybeSend(session());
+  clock.t += COOLDOWN_MS - 1;
+  n.maybeSend(session());
+  assert.equal(sent.length, 1);
+  clock.t += 1;
+  n.maybeSend(session());
+  assert.equal(sent.length, 2);
+});
+
+test("the cooldown is per session, so two sessions blocking at once both notify", () => {
+  // Deliberate, and the risk the plan names: these are two things needing you. If a busy
+  // moment buzzes too much, the fix is a global rate limit, not a longer per-session cooldown.
+  const { sent, n } = cooled();
+  n.maybeSend(session({ id: "s1" }));
+  n.maybeSend(session({ id: "s2" }));
+  assert.equal(sent.length, 2);
+});
+
+test("failed jobs are not cooled; each failure is its own", () => {
+  const { sent, n } = cooled();
+  n.maybeSend(job({ feature: "006-push-notifications" }));
+  n.maybeSend(job({ feature: "007-private-specs" }));
+  assert.equal(sent.length, 2);
+});
