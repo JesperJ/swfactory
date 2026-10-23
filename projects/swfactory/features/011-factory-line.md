@@ -201,3 +201,9 @@ the thing that actually drifted.
   as one question, and `status` proposing a diff — are runtime behaviour that no review round
   can settle. They close by use. Staying at `reviewing` until then rather than buying a second
   round that could only re-read the same prompt text.
+- 2026-10-23 Merged to main (PR #2) on the user's decision. That is the approval the rules
+  reserve for a human: `approve` cannot pass this, because four acceptance criteria are still
+  unverified, and merging is explicitly not the approver's to do.
+  Staying at `reviewing` rather than being marked done. The four open criteria — `next` acting
+  on the top item, the two-round cap, an escalation arriving as one question, and `status`
+  proposing a diff — close the first time each is genuinely exercised, not before.
