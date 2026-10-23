@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: planned
+status: building
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -143,3 +143,4 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   tuning. Neither trigger point has more than one caller, so the wiring is small.
   Recorded `decisions/2026-10-23-ntfy-over-web-push.md`, because routing session metadata through
   a third party deserves to be findable later rather than buried in a plan. 8 tasks.
+- 2026-10-23 Building on `feature/006-push-notifications`.
