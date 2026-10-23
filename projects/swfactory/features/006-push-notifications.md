@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: building
+status: reviewing
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -201,3 +201,4 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   against real ntfy.sh: two messages, correct titles, bodies, priorities and click targets, with
   `SECRET-PROMPT`, `SECRET-COMMAND` and `/home/jesper/SECRET/PATH` all planted and none present.
   89 tests, typecheck clean.
+- 2026-10-23 Back to reviewing after the round 1 rework. PR #5 updated.
