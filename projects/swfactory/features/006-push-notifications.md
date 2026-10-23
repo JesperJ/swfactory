@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: reviewing
+status: building
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -137,6 +137,28 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
 - [ ] Dogfood: subscribe the phone, make a live session hit a permission prompt, fail a job
       (needs Jesper's phone; the dashboard-to-ntfy half is verified)
 
+### Round 1 rework
+- [ ] **Blocking (UX 1).** A `Job failed` tap lands on the Inbox, which never renders jobs — he
+      sees "All quiet" seconds after being told something failed. Click to
+      `#/next/doc/<project>/<feature>`, which renders the failed job and its Retry button;
+      fall back to `#/next` when there is no feature. Sessions keep `#/inbox`.
+- [ ] Take `maybeSend` off the request path for real (code 2, security 1): it is synchronous up
+      to `send()`, so `loadProjects()` runs inline in the hook handler. Defer it, and check the
+      cooldown *before* `notificationFor` (security 2) so a flapping session stops paying for a
+      spec read it discards.
+- [ ] Pass the notifier an explicit `{ id, status, host, repo, dismissed }` (security 4). A
+      `Pick` is structural: `prompt`, `message` and `cwd` are on the object at runtime today.
+- [ ] Drain the ntfy response body (code 4, security 5), and warn at startup when `NTFY_TOPIC`
+      is set without `FACTORY_PUBLIC_URL` (code 3, UX 5) instead of sending unclickable
+      notifications in silence.
+- [ ] Put the feature in the body, not the title (UX 3) — the title is what a lock screen clips,
+      and the feature is the part that varies. Send `priority` in the body so iOS gets it too,
+      and fall back to the `cwd` basename before "unknown work" (UX 6).
+- [ ] README: `fly secrets set` lines for the deployed path (UX 4), where appending to `.env` is
+      silently inert. Drop the Android-only priority step once priority is sent in the body.
+- [ ] Test the real dismissed sequence (code 1): dismiss, `working`, `needs_you` — the current
+      test builds a state the store cannot produce.
+
 ## Log
 - 2026-10-23 Specced. Mechanism changed from Web Push to ntfy: Web Push needs a secure context
   and the dashboard is LAN-only HTTP with 004 deferred. Added failed jobs as a second trigger —
@@ -161,3 +183,11 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   notify. That is the inbox's existing semantics and reads as correct — it is a new thing
   needing you — but it is the one place the "dismissed produces nothing" rule bends.
 - 2026-10-23 Ready for review: https://github.com/JesperJ/swfactory/pull/5
+- 2026-10-23 Review round 1: code 0 blocking / 4 minor, security 0 blocking / 5 minor, UX 1
+  blocking / 5 minor. See `reviews/006-round-1.md`. Reworking. The blocking finding: a `Job
+  failed` notification links to the Inbox, which never renders jobs, so the tap lands on "All
+  quiet" — the dashboard contradicting the notification trains distrust faster than frequency
+  does. Also taking all eleven minors: each is small, and most of them make a claim the code
+  already states about itself actually true — "not on the request path", "a property of the
+  code", "would otherwise leak one handle". Three reviewers independently found the same
+  synchronous `loadProjects()` in the hook handler.
