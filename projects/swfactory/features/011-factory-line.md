@@ -68,17 +68,17 @@ It does not merge to main. The approver's job is to make sure only reviewed work
 not to remove the last decision. Merging stays mine, with the findings already attached.
 
 ## Acceptance criteria
-- [ ] `/factory <sub>` replaces the five loose commands; the old names stop existing
+- [x] `/factory <sub>` replaces the five loose commands; the old names stop existing
 - [ ] `/factory next` acts on the dashboard's top recommendation without being told which it is
-- [ ] `reviewing` is a real status: parsed, ranked, and coloured in the dashboard
+- [x] `reviewing` is a real status: parsed, ranked, and coloured in the dashboard
 - [ ] `/factory build` leaves a feature at `reviewing`, never at `done`
 - [ ] Reviewers run in parallel and write findings to a per-round file, kept in git
 - [ ] Each finding names the acceptance criterion or file it concerns, not a general opinion
 - [ ] The approver passes, reworks, or escalates, and records which and why in the spec's Log
 - [ ] Rework is capped at two rounds, then escalates
 - [ ] An escalation reaches me as one specific question, never as a list of findings
-- [ ] Nothing merges to main automatically
-- [x] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
+- [x] Nothing merges to main automatically
+- [ ] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
       blocked-but-planned — and applies only what I accept
 
 ## Out of scope
