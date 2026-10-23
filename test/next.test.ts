@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
+import { featureAction, rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
+import { isJobCommand } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
 const NOW = new Date("2026-10-23T12:00:00Z");
@@ -150,4 +151,38 @@ test("review work outranks starting anything new", () => {
   assert.equal(ranked[0].feature, "001-review", "finishing beats widening the work");
   assert.equal(ranked[0].action, "Review");
   assert.equal(ranked[0].reason, "built, waiting on review");
+});
+
+test("each kind carries the command it actually queues", () => {
+  // Round 1 of 005: the UI kept a second copy of this mapping and sent `approve` to `build`,
+  // so the hero's "Review it" queued a build that dead-ended on build's own status guard.
+  const statuses = { reviewing: "review", planned: "build", specced: "plan", idea: "spec" };
+  for (const [status, command] of Object.entries(statuses)) {
+    const a = featureAction(feature({ slug: "001-x", status }), NOW);
+    assert.equal(a?.command, command, `${status} must queue ${command}`);
+  }
+  const building = featureAction(feature({ slug: "001-x", status: "building", lastLog: daysAgo(1) }), NOW);
+  assert.equal(building?.command, "build");
+  assert.equal(featureAction(feature({ slug: "001-x", status: "done" }), NOW), null);
+});
+
+test("a reviewing feature's ranked item queues a review, not a build", () => {
+  const projects = [project("shop", [feature({ slug: "001-r", status: "reviewing" })])];
+  const [top] = rankNext(projects, [], NOW);
+  assert.equal(top.action, "Review");
+  assert.equal(top.command, "review", "the verb and the command must agree");
+});
+
+test("a session item carries no command, because no command can answer a session", () => {
+  const s = session({ id: "s1", status: "needs_you", project: "shop" });
+  const [top] = rankNext([project("shop", [])], [s], NOW);
+  assert.equal(top.kind, "answer");
+  assert.equal(top.command, null);
+});
+
+test("every command a feature can queue is one the API accepts", () => {
+  for (const status of ["reviewing", "building", "planned", "specced", "idea"]) {
+    const a = featureAction(feature({ slug: "001-x", status }), NOW);
+    if (a?.command) assert.ok(isJobCommand(a.command), `${status} queues ${a.command}, which the API would reject`);
+  }
 });

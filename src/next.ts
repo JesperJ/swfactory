@@ -3,7 +3,7 @@
 // The rules are deliberately legible: every item carries the reason it ranks where it does,
 // so the list can be argued with. No scoring model.
 
-import type { Session } from "./db.ts";
+import type { Session, JobCommand } from "./db.ts";
 import type { SessionLink } from "./match.ts";
 import type { Feature, Project } from "./specs.ts";
 
@@ -16,9 +16,25 @@ const BLOCKED_PENALTY = 100; // blocked work sinks below everything actionable
 
 export type NextKind = "answer" | "review" | "approve" | "unstick" | "build" | "plan" | "spec";
 
+// What each kind means in terms of work that can actually be started. Round 1 of 005 found the
+// UI keeping its own copy of this and disagreeing with the command's dispatch table, so the
+// hero's "Review it" button queued a build. There is now exactly one mapping, here, and the UI
+// is handed the answer rather than deriving it. Session kinds are null on purpose: no command
+// can answer a session for you.
+const KIND_COMMAND: Record<NextKind, JobCommand | null> = {
+  answer: null,
+  review: null,
+  approve: "review",
+  unstick: "build",
+  build: "build",
+  plan: "plan",
+  spec: "spec",
+};
+
 export interface NextItem {
   kind: NextKind;
   action: string; // "Answer", "Build" — the verb, for the UI
+  command: JobCommand | null; // what tapping it queues, or null when nothing can be queued
   title: string;
   project: string; // display name
   projectSlug: string;
@@ -73,6 +89,7 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
     items.push({
       kind: s.status === "needs_you" ? "answer" : "review",
       action: s.status === "needs_you" ? "Answer" : "Review",
+      command: null, // a session needs a person, not a queued command
       title: f?.title ?? `${p.name} session`,
       project: p.name,
       projectSlug: p.slug,
@@ -109,8 +126,54 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
 
 type FeatureEntry = Omit<NextItem, "score" | "blocked" | "reason"> & { score: number; reason: string };
 
+// What a feature needs next, independent of ranking — so the Projects view and the feature
+// sheet can offer the same button as Next without keeping their own copy of these rules.
+export interface FeatureAction {
+  kind: NextKind;
+  action: string;
+  command: JobCommand | null;
+  reason: string;
+  score: number;
+}
+
+export function featureAction(f: Feature, now = new Date()): FeatureAction | null {
+  const of = (kind: NextKind, action: string, score: number, reason: string): FeatureAction => ({
+    kind,
+    action,
+    command: KIND_COMMAND[kind],
+    score,
+    reason,
+  });
+  switch (f.status) {
+    case "building": {
+      const stalled = f.lastLog ? daysSince(f.lastLog, now) : null;
+      if (stalled !== null && stalled >= STALE_DAYS)
+        return of("unstick", "Unstick", 2, `no activity for ${plural(stalled, "day")}`);
+      return of("unstick", "Continue", 3, "in progress, nothing running");
+    }
+    case "reviewing":
+      // Above starting anything new: finishing what is nearly done beats widening the work.
+      return of("approve", "Review", 2.5, "built, waiting on review");
+    case "planned":
+      return of("build", "Build", 4, "planned and ready to build");
+    case "specced":
+      return of("plan", "Plan", 5, "specced, needs a plan");
+    case "idea":
+      return of("spec", "Spec", 6, "an idea, needs a spec");
+    default:
+      return null; // done, or something we don't act on
+  }
+}
+
 function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
-  const base = {
+  const a = featureAction(f, now);
+  if (!a) return null;
+  return {
+    kind: a.kind,
+    action: a.action,
+    command: a.command,
+    reason: a.reason,
+    score: a.score,
     title: f.title,
     project: p.name,
     projectSlug: p.slug,
@@ -118,23 +181,4 @@ function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
     sessionId: null,
     url: null,
   };
-  switch (f.status) {
-    case "building": {
-      const stalled = f.lastLog ? daysSince(f.lastLog, now) : null;
-      if (stalled !== null && stalled >= STALE_DAYS)
-        return { ...base, kind: "unstick", action: "Unstick", score: 2, reason: `no activity for ${plural(stalled, "day")}` };
-      return { ...base, kind: "unstick", action: "Continue", score: 3, reason: "in progress, nothing running" };
-    }
-    case "reviewing":
-      // Above starting anything new: finishing what is nearly done beats widening the work.
-      return { ...base, kind: "approve", action: "Review", score: 2.5, reason: "built, waiting on review" };
-    case "planned":
-      return { ...base, kind: "build", action: "Build", score: 4, reason: "planned and ready to build" };
-    case "specced":
-      return { ...base, kind: "plan", action: "Plan", score: 5, reason: "specced, needs a plan" };
-    case "idea":
-      return { ...base, kind: "spec", action: "Spec", score: 6, reason: "an idea, needs a spec" };
-    default:
-      return null; // done, or something we don't act on
-  }
 }

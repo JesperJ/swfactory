@@ -8,7 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, isJobCommand, JOB_COMMANDS } from "./db.ts";
 import { parseHook } from "./hooks.ts";
 import { linkSession } from "./match.ts";
-import { rankNext } from "./next.ts";
+import { featureAction, rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
@@ -77,7 +77,19 @@ export function createApp(cfg: Config) {
   app.get("/api/state", (c) => {
     const projects = loadProjects(cfg.specsDir);
     const sessions = cfg.store.list().map((s) => ({ ...s, ...linkSession(s, projects) }));
-    return c.json({ projects, sessions, jobs: cfg.store.listJobs(), next: rankNext(projects, sessions), now: new Date().toISOString() });
+    // Each feature carries what it needs next, so every view can offer the same button without
+    // re-deriving the rules. One mapping, server-side; the UI is told, not left to work it out.
+    const annotated = projects.map((p) => ({
+      ...p,
+      features: p.features.map((f) => ({ ...f, next: featureAction(f) })),
+    }));
+    return c.json({
+      projects: annotated,
+      sessions,
+      jobs: cfg.store.listJobs(),
+      next: rankNext(projects, sessions),
+      now: new Date().toISOString(),
+    });
   });
 
   app.get("/api/docs/:project/:feature?", (c) => {

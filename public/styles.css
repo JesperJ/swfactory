@@ -448,4 +448,16 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
   display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   padding: 0 14px 12px; margin-top: -4px;
 }
-.rowaction .btn { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.rowaction .btn { min-height: 44px; padding: 0 14px; font-size: 14px; }
+
+/* A failed job explains itself in visible text and offers the retry the store already allows.
+   The reason used to live in a title attribute, which does not exist on touch. */
+.jobfail { display: grid; gap: 8px; justify-items: end; }
+.jobfail-why {
+  margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-2); text-align: left;
+  width: 100%; overflow-wrap: anywhere;
+}
+.jobfail-why b { color: var(--needs); }
+.btn.retry { border-color: var(--needs); color: var(--needs); }
+.featurerow { display: grid; }
+.sheet-action { margin-bottom: 18px; display: flex; justify-content: flex-end; }

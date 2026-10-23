@@ -45,7 +45,7 @@ export interface SessionUpdate {
 // What a job may ask for. The runner rebuilds the command from this, so a job never carries a
 // shell string, a path, or anything else free-form. Adding to this list widens what a
 // compromised dashboard can cause to run on the host, so it is deliberately short.
-export const JOB_COMMANDS = ["plan", "build", "spec"] as const;
+export const JOB_COMMANDS = ["plan", "build", "spec", "review"] as const;
 export type JobCommand = (typeof JOB_COMMANDS)[number];
 
 // queued -> claimed -> running -> done | failed

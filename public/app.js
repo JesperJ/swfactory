@@ -150,10 +150,9 @@ function empty(title, body) {
   return `<div class="empty">${icons.check}<h3>${title}</h3><p>${body}</p></div>`;
 }
 
-// Which factory command each kind maps to. Same mapping /factory next uses, so the dashboard
-// and the command agree about what "Build" means. Session kinds are absent on purpose: no
-// command can answer a session for you.
-const KIND_COMMAND = { approve: "build", unstick: "build", build: "build", plan: "plan", spec: "spec" };
+// The kind-to-command mapping lives on the server (src/next.ts) and arrives on each item as
+// `command`. Round 1 found a second copy here that disagreed with it, so "Review it" queued a
+// build. The UI is now told what a tap means rather than working it out.
 
 function jobFor(projectSlug, featureSlug) {
   return (state.jobs ?? []).find((j) => j.project === projectSlug && j.feature === featureSlug);
@@ -162,17 +161,32 @@ function jobFor(projectSlug, featureSlug) {
 const JOB_LABEL = { queued: "Queued", claimed: "Starting", running: "Started", failed: "Failed", done: "Done" };
 
 // The button that queues work, or the state of the job already queued for it.
+// `item` needs { projectSlug, feature, command, action, blocked }.
 function startControl(item, { primary = false } = {}) {
-  const command = KIND_COMMAND[item.kind];
-  if (!command || !item.feature || item.blocked) return "";
+  if (!item?.command || !item.feature || item.blocked) return "";
   const job = jobFor(item.projectSlug, item.feature);
-  if (job && job.status !== "done") {
-    const label = JOB_LABEL[job.status] ?? job.status;
-    return job.status === "failed"
-      ? `<span class="pill needs_you" title="${esc(job.error ?? "")}">${label}</span>`
-      : `<span class="pill working">${label}</span>`;
+  const button = (label, extraClass = "") =>
+    `<button class="btn ${primary ? "primary" : ""} ${extraClass}" data-start="${esc(item.projectSlug)}/${esc(item.feature)}/${esc(item.command)}">${esc(label)}</button>`;
+
+  if (job && job.status === "failed") {
+    // The store lets a failed job be queued again, so the UI must too — otherwise the one thing
+    // this exists to do from a phone is unavailable for as long as the failure stays listed.
+    // The reason goes in visible text: a title attribute does not exist on touch.
+    return `<div class="jobfail">
+      <p class="jobfail-why"><b>Failed.</b> ${esc(job.error ?? "no reason given")}</p>
+      ${button(`Retry ${item.action.toLowerCase()}`, "retry")}
+    </div>`;
   }
-  return `<button class="btn ${primary ? "primary" : ""}" data-start="${esc(item.projectSlug)}/${esc(item.feature)}/${esc(command)}">${esc(item.action)} it</button>`;
+  if (job && job.status !== "done") return `<span class="pill working">${JOB_LABEL[job.status] ?? job.status}</span>`;
+  return button(`${item.action} it`);
+}
+
+// A feature anywhere in the UI, turned into something startControl understands. `next` is
+// attached by the server; a done feature has none.
+function featureItem(projectSlug, feature) {
+  return feature?.next
+    ? { ...feature.next, projectSlug, feature: feature.slug, blocked: !!feature.blocked }
+    : null;
 }
 
 // One recommendation, a few alternatives. Everything here is a thing you could start now.
@@ -255,11 +269,13 @@ function progressBar(features) {
 
 function featureRow(p, f) {
   const live = featureSession(p.slug, f.slug);
-  return `<li><button class="feature ${f.status === "done" ? "done" : ""}" data-doc="${esc(p.slug)}/${esc(f.slug)}">
+  // Someone navigating by project should be able to start work there too, not only from Next.
+  const control = live ? "" : startControl(featureItem(p.slug, f));
+  return `<li class="featurerow"><button class="feature ${f.status === "done" ? "done" : ""}" data-doc="${esc(p.slug)}/${esc(f.slug)}">
     <span class="status-dot ${statusClass(f.status)}" title="${esc(f.status)}"></span>
     <span class="ftitle"><span class="fid">${esc(f.id)}</span> ${esc(f.title)}</span>
     <span class="fstatus">${live ? `<span class="live-dot ${live.status}" title="${SESSION_LABEL[live.status]}"></span>` : ""}${esc(f.status)}</span>
-  </button></li>`;
+  </button>${control ? `<div class="rowaction">${control}</div>` : ""}</li>`;
 }
 
 function projectCard(p, { showAllDone = false } = {}) {
@@ -362,10 +378,14 @@ async function syncSheet(r) {
   const sessionsHtml = related.length
     ? `<div class="stack" style="margin-bottom:20px">${related.map((s) => sessionCard(s, { compact: s.status === "ended" })).join("")}</div>`
     : "";
+  // The sheet is where you land from anywhere, so it must offer the same action — and show a
+  // failed job rather than looking as though nothing was ever attempted.
+  const control = f && !related.some((s) => s.status === "working") ? startControl(featureItem(r.doc.project, f), { primary: true }) : "";
+  const controlHtml = control ? `<div class="sheet-action">${control}</div>` : "";
 
   if (key !== sheetKey) {
     sheetKey = key;
-    $("#sheet-body").innerHTML = `${sessionsHtml}<div class="prose" aria-busy="true"><p style="color:var(--text-3)">Loading…</p></div>`;
+    $("#sheet-body").innerHTML = `${controlHtml}${sessionsHtml}<div class="prose" aria-busy="true"><p style="color:var(--text-3)">Loading…</p></div>`;
     sheet.hidden = false;
     requestAnimationFrame(() => {
       sheet.classList.add("open");
@@ -382,7 +402,8 @@ async function syncSheet(r) {
     // Live refresh: keep the spec, update the session cards above it.
     const body = $("#sheet-body");
     body.querySelector(".stack")?.remove();
-    body.insertAdjacentHTML("afterbegin", sessionsHtml);
+    body.querySelector(".sheet-action")?.remove();
+    body.insertAdjacentHTML("afterbegin", `${controlHtml}${sessionsHtml}`);
   }
 }
 

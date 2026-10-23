@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: building
+status: reviewing
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -43,7 +43,7 @@ starting it. Inside tmux it can be attached from any terminal, and it gives 009 
 answer for "open this session".
 
 ## Acceptance criteria
-- [ ] Next's recommendation and each feature expose a button matching the action named
+- [x] Next's recommendation and each feature expose a button matching the action named
 - [ ] Tapping it starts a Claude session in that project's repo running the right command
 - [ ] The started session appears in the dashboard within 30s through the normal hook path
 - [x] The dashboard container cannot execute anything on the host; the runner only pulls
@@ -54,7 +54,7 @@ answer for "open this session".
 - [x] Two taps don't start two sessions for the same feature
 - [ ] A session started this way runs in tmux and can be attached
 - [ ] The runner survives a reboot and recovers cleanly if the dashboard is down
-- [ ] Jobs are visible: queued, running, failed, each with its reason
+- [x] Jobs are visible: queued, running, failed, each with its reason
 
 ## Out of scope
 - Replying into a running session from the dashboard (separate, and harder).
@@ -130,13 +130,13 @@ more here than the few seconds of latency it costs.
 - [x] A `failed` job shows its reason on the dashboard rather than disappearing
 - [x] systemd user unit file and the README section to install it
 - [ ] Dogfood: queue a job from the phone and watch the session appear in the Inbox
-- [ ] Round 1: `KIND_COMMAND.approve` queues a build for a feature at `reviewing`; it must map to `review`
-- [ ] Round 1: allow `review` as a job command, or the hero button for a reviewing feature cannot work
-- [ ] Round 1: a failed job blocks retry for 24h although the store would accept one
-- [ ] Round 1: the failure reason lives only in a `title` attribute, invisible on touch
-- [ ] Round 1: no start control outside the Next hero and its first four rows — add to the feature sheet and the project feature rows
-- [ ] Round 1 (minor): row buttons are 36px, below the 40px base and the 44px touch guideline
-- [ ] Round 1: cover `KIND_COMMAND` and `startControl` with tests — neither is tested
+- [x] Round 1: `KIND_COMMAND.approve` queues a build for a feature at `reviewing`; it must map to `review`
+- [x] Round 1: allow `review` as a job command, or the hero button for a reviewing feature cannot work
+- [x] Round 1: a failed job blocks retry for 24h although the store would accept one
+- [x] Round 1: the failure reason lives only in a `title` attribute, invisible on touch
+- [x] Round 1: no start control outside the Next hero and its first four rows — add to the feature sheet and the project feature rows
+- [x] Round 1 (minor): row buttons are 36px, below the 40px base and the 44px touch guideline
+- [x] Round 1: cover `KIND_COMMAND` and `startControl` with tests — neither is tested
 
 ## Risks
 - This is the first thing in the factory that *executes* rather than describes. The allowed-set
@@ -178,3 +178,15 @@ more here than the few seconds of latency it costs.
   `KIND_COMMAND` disagrees with the dispatch table in `factory.md`. It dead-ends on `build`'s
   own status guard, so nothing is damaged — but it burns the job and hides the real
   recommendation until the dead session ends.
+- 2026-10-23 Round 1 fixes built. The kind-to-command mapping now exists once, in `src/next.ts`,
+  and every feature carries its own `next` through `/api/state` — so the UI is told what a tap
+  means rather than deriving it. That is the actual fix for "Review it queues a build": the two
+  copies that disagreed are now one. `review` joins the allowed job commands, since the hero
+  button for a reviewing feature could not otherwise work.
+  A failed job now states its reason in visible text and offers a retry, which the store always
+  allowed. Start controls exist on the Next hero, Next rows, project feature rows and the
+  feature sheet. Row buttons are 44px.
+  Four tests cover the mapping, including one asserting that every command a feature can queue
+  is one the API would accept — the class of bug round 1 found.
+  46 tests, typecheck clean, shoot clean. Also cancelled jobs 2 and 3, queued by the UX reviewer
+  through the old mapping.
