@@ -4,7 +4,7 @@ import { matchFeature, matchProject } from "../src/match.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
 const feature = (id: string, slug: string): Feature => ({
-  id, slug, title: slug, status: "planned", priority: null, summary: null, file: `${slug}.md`,
+  id, slug, title: slug, status: "planned", priority: null, summary: null, blocked: null, lastLog: null, file: `${slug}.md`,
 });
 const features = [feature("003", "003-login"), feature("012", "012-export-csv")];
 const projects: Project[] = [

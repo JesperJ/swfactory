@@ -3,6 +3,7 @@ title: Deploy so it's reachable from mobile
 status: planned
 priority: P1
 summary: Self-hosted in Docker at home. LAN access works; publishing it is deferred.
+blocked: needs a domain or Tailscale Funnel — deferred 2026-10-23
 ---
 
 # Deploy so it's reachable from mobile

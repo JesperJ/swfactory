@@ -18,6 +18,8 @@ export interface Feature {
   status: string;
   priority: string | null;
   summary: string | null;
+  blocked: string | null; // frontmatter `blocked:` — why this can't move right now
+  lastLog: string | null; // newest "- YYYY-MM-DD" date under ## Log, for spotting stalls
   file: string;
 }
 
@@ -61,6 +63,15 @@ function firstHeading(body: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+// Newest "- YYYY-MM-DD ..." entry under ## Log. Entries are written newest-last by convention,
+// but we take the maximum rather than the last line so an out-of-order entry can't fake a stall.
+export function lastLogDate(body: string): string | null {
+  const log = body.split(/^##\s+Log\s*$/m)[1];
+  if (!log) return null;
+  const dates = log.match(/^-\s*(\d{4}-\d{2}-\d{2})/gm)?.map((l) => l.replace(/^-\s*/, ""));
+  return dates?.length ? dates.sort().at(-1)! : null;
+}
+
 export function loadProjects(specsDir: string): Project[] {
   if (!existsSync(specsDir)) return [];
   const projects: Project[] = [];
@@ -97,6 +108,8 @@ function loadFeatures(dir: string): Feature[] {
       status: str(data.status) ?? "idea",
       priority: str(data.priority),
       summary: str(data.summary),
+      blocked: str(data.blocked),
+      lastLog: lastLogDate(body),
       file: name,
     });
   }

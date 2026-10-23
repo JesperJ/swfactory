@@ -8,6 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Store } from "./db.ts";
 import { parseHook } from "./hooks.ts";
 import { linkSession } from "./match.ts";
+import { rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireHookToken, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
@@ -71,7 +72,7 @@ export function createApp(cfg: Config) {
   app.get("/api/state", (c) => {
     const projects = loadProjects(cfg.specsDir);
     const sessions = cfg.store.list().map((s) => ({ ...s, ...linkSession(s, projects) }));
-    return c.json({ projects, sessions, now: new Date().toISOString() });
+    return c.json({ projects, sessions, next: rankNext(projects, sessions), now: new Date().toISOString() });
   });
 
   app.get("/api/docs/:project/:feature?", (c) => {

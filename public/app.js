@@ -7,6 +7,7 @@ const STALE_MS = 20 * 60_000; // "working" with no hook event for this long is p
 const INBOX_TURN_MS = 48 * 3600_000; // "your turn" sessions older than this drop out of the inbox
 
 const icons = {
+  next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
   projects: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   sessions: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"/></svg>',
@@ -17,12 +18,13 @@ const icons = {
 };
 
 const TABS = [
+  { id: "next", label: "Next", icon: icons.next },
   { id: "inbox", label: "Inbox", icon: icons.inbox },
   { id: "projects", label: "Projects", icon: icons.projects },
   { id: "sessions", label: "Sessions", icon: icons.sessions },
 ];
 
-let state = { projects: [], sessions: [], now: new Date().toISOString() };
+let state = { projects: [], sessions: [], next: [], now: new Date().toISOString() };
 let featureFilter = "all";
 const expandedDone = new Set();
 
@@ -77,7 +79,7 @@ function parseRoute() {
   const docAt = parts.indexOf("doc");
   const base = docAt >= 0 ? parts.slice(0, docAt) : parts;
   const doc = docAt >= 0 ? { project: parts[docAt + 1], feature: parts[docAt + 2] } : null;
-  const tab = TABS.some((t) => t.id === base[0]) ? base[0] : "inbox";
+  const tab = TABS.some((t) => t.id === base[0]) ? base[0] : "next";
   return { tab, project: tab === "projects" ? base[1] : undefined, doc };
 }
 
@@ -146,6 +148,42 @@ function sessionCard(s, { compact = false } = {}) {
 
 function empty(title, body) {
   return `<div class="empty">${icons.check}<h3>${title}</h3><p>${body}</p></div>`;
+}
+
+// One recommendation, a few alternatives. Everything here is a thing you could start now.
+function renderNext() {
+  const items = state.next ?? [];
+  const live = items.filter((i) => !i.blocked);
+  const blocked = items.filter((i) => i.blocked);
+  if (!live.length && !blocked.length)
+    return empty("Nothing waiting", "No sessions need you and no feature is ready to move. Add an idea with <code>/new-feature</code>.");
+
+  const [top, ...rest] = live;
+  const link = (i) => (i.projectSlug ? docHash(i.projectSlug, i.feature ?? undefined) : null);
+
+  const hero = top
+    ? `<article class="card hero k-${esc(top.kind)}">
+        <div class="hero-kicker">${esc(top.project)}${top.feature ? ` <span class="sep">›</span> ${esc(top.feature.slice(0, 3))}` : ""}</div>
+        <h2 class="hero-title">${esc(top.action)} ${esc(top.title)}</h2>
+        <p class="hero-why">${esc(top.reason)}</p>
+        <div class="actions">
+          ${top.url ? `<a class="btn primary" href="${esc(top.url)}" target="_blank" rel="noopener">Open session ${icons.open}</a>` : ""}
+          ${link(top) ? `<a class="btn ${top.url ? "" : "primary"}" href="${link(top)}">Open spec</a>` : ""}
+        </div>
+      </article>`
+    : "";
+
+  const row = (i) =>
+    `<li><a class="nextrow" href="${link(i) ?? "#/inbox"}">
+      <span class="dot k-${esc(i.kind)}"></span>
+      <span class="nextmain"><b>${esc(i.action)}</b> ${esc(i.title)}</span>
+      <span class="nextwhy">${esc(i.project)} · ${esc(i.reason)}</span>
+    </a></li>`;
+
+  const alts = rest.slice(0, 4);
+  return `${hero}
+    ${alts.length ? `<div class="section"><h2>Then</h2></div><ul class="nextlist">${alts.map(row).join("")}</ul>` : ""}
+    ${blocked.length ? `<div class="section"><h2>Blocked</h2><span class="n">${blocked.length}</span></div><ul class="nextlist blocked">${blocked.slice(0, 4).map(row).join("")}</ul>` : ""}`;
 }
 
 function renderInbox() {
@@ -257,10 +295,14 @@ function renderSessions() {
 function render() {
   const r = parseRoute();
   renderNav();
-  const titles = { inbox: "Inbox", projects: r.project ? projectBySlug(r.project)?.name ?? "Project" : "Projects", sessions: "Sessions" };
+  const titles = { next: "Next", inbox: "Inbox", projects: r.project ? projectBySlug(r.project)?.name ?? "Project" : "Projects", sessions: "Sessions" };
   $("#title").textContent = titles[r.tab];
   const view = $("#view");
-  view.innerHTML = r.tab === "projects" ? renderProjects(r.project) : r.tab === "sessions" ? renderSessions() : renderInbox();
+  view.innerHTML =
+    r.tab === "projects" ? renderProjects(r.project)
+    : r.tab === "sessions" ? renderSessions()
+    : r.tab === "inbox" ? renderInbox()
+    : renderNext();
   syncSheet(r);
 }
 

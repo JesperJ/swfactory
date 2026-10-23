@@ -391,3 +391,41 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 }
 .login .btn { height: 48px; }
 .login .error { color: var(--needs); font-weight: 600; }
+
+/* ---------- Next view ---------- */
+.hero {
+  padding: 18px 16px 16px; display: grid; gap: 6px;
+  border-left: 4px solid var(--accent); margin-bottom: 4px;
+}
+.hero.k-answer { border-left-color: var(--needs); }
+.hero.k-review { border-left-color: var(--turn); }
+.hero.k-unstick { border-left-color: var(--st-building); }
+.hero.k-build { border-left-color: var(--st-planned); }
+.hero.k-plan { border-left-color: var(--st-specced); }
+.hero.k-spec { border-left-color: var(--st-idea); }
+.hero-kicker { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.hero-kicker .sep { color: var(--text-3); }
+.hero-title { margin: 0; font-size: 21px; line-height: 1.25; letter-spacing: -0.02em; }
+.hero-why { margin: 0; color: var(--text-2); font-size: 14px; }
+.hero .actions { margin-top: 8px; }
+@media (min-width: 900px) { .hero { padding: 22px 22px 20px; } .hero-title { font-size: 25px; } }
+
+.nextlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.nextrow {
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: baseline;
+  padding: 12px 14px; min-height: 44px; text-decoration: none; color: inherit;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.nextrow:hover { background: var(--surface-2); }
+.nextrow .dot { width: 9px; height: 9px; border-radius: 50%; grid-row: 1; align-self: center; }
+.nextrow .dot.k-answer { background: var(--needs); }
+.nextrow .dot.k-review { background: var(--turn); }
+.nextrow .dot.k-unstick { background: var(--st-building); }
+.nextrow .dot.k-build { background: var(--st-planned); }
+.nextrow .dot.k-plan { background: var(--st-specced); }
+.nextrow .dot.k-spec { background: var(--st-idea); }
+.nextmain { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nextmain b { font-weight: 650; }
+.nextwhy { grid-column: 2; font-size: 12.5px; color: var(--text-3); }
+.nextlist.blocked .nextrow { opacity: .72; }
+@media (min-width: 1100px) { .nextlist { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

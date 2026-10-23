@@ -1,6 +1,6 @@
 ---
 title: Tell me what to work on next
-status: specced
+status: building
 priority: P1
 summary: A ranked cross-project "next" view that names one thing to do, instead of a list to scan.
 ---
@@ -32,13 +32,13 @@ The view should fit on a phone screen without scrolling. One recommendation, thr
 alternatives, each one line.
 
 ## Acceptance criteria
-- [ ] Opening the dashboard shows one recommended next action, named, with the project it's in
-- [ ] Below it, at most 4 ranked alternatives, one line each
-- [ ] Stalled `building` features surface above fresh `planned` ones
-- [ ] Items blocked on someone else are labelled blocked and ranked last
-- [ ] The whole view fits a phone screen without scrolling
-- [ ] Each item links to the spec, and to a session if one is live
-- [ ] Ranking is explainable — a short reason per item, e.g. "no activity for 9 days"
+- [x] Opening the dashboard shows one recommended next action, named, with the project it is in
+- [x] Below it, at most 4 ranked alternatives, one line each
+- [x] Stalled `building` features surface above fresh `planned` ones
+- [x] Items blocked on someone else are labelled blocked and ranked last
+- [ ] The whole view fits a phone screen without scrolling — not yet verified on a real phone
+- [x] Each item links to the spec, and to a session if one is live
+- [x] Ranking is explainable — a short reason per item, e.g. "no activity for 9 days"
 
 ## Out of scope
 - Automatically starting work (that's 005).
@@ -51,3 +51,7 @@ alternatives, each one line.
 ## Log
 - 2026-10-23 Specced after the real complaint surfaced: the dashboard shows state but doesn't
   reduce decisions, so time is lost re-deciding what matters on every visit.
+- 2026-10-23 Built. `src/next.ts` ranks across projects; `/api/state` serves it; Next is the
+  default view. 9 ranking tests, typecheck clean. Added `blocked:` frontmatter and a parsed
+  `lastLog` date so stalls are detectable. Not verified visually on a phone — no browser
+  automation on this machine.
