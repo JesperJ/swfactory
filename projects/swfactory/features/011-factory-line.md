@@ -1,6 +1,6 @@
 ---
 title: The factory line
-status: planned
+status: building
 priority: P1
 summary: One /factory command, a review stage before done, and an approver that absorbs the decisions that don't need me.
 ---

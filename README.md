@@ -4,7 +4,7 @@ A structured, spec-driven way to build software with Claude, plus one live overv
 project, feature and Claude session, on your phone and on your desktop.
 
 - **Specs** are markdown in git (`projects/`), so you can read and edit them in Obsidian.
-- **Slash commands** move each feature through `idea → specced → planned → building → done`.
+- **One `/factory` command** moves each feature through `idea → specced → planned → building → reviewing → done`.
 - **The dashboard** shows what needs you right now, every project's progress, and links straight
   into the Claude sessions working on it. Sessions report in automatically through Claude Code hooks.
 
@@ -21,13 +21,17 @@ project, feature and Claude session, on your phone and on your desktop.
 
 | You want to | Do |
 | --- | --- |
-| Start a project | `/new-project <idea>` in Claude, in this repo |
-| Spec a feature | `/new-feature <project> <idea>` |
-| Plan it against the code | `/plan <project>/<NNN>` |
-| Build it | `/build <project>/<NNN>` (works on branch `feature/<NNN>-<slug>`) |
-| See where everything stands | Open the dashboard, or `/status` |
+| Do the next useful thing | `/factory next` |
+| Start a project | `/factory project <idea>` |
+| Spec a feature | `/factory spec <project> <idea>` |
+| Plan it against the code | `/factory plan <project>/<NNN>` |
+| Build it | `/factory build <project>/<NNN>` (branch `feature/<NNN>-<slug>`) |
+| Review what was built | `/factory review <project>/<NNN>` |
+| Accept or send it back | `/factory approve` / `/factory rework <id> <note>` |
+| See where everything stands | Open the dashboard, or `/factory status` |
 
-The dashboard has three views:
+The dashboard has four views:
+- **Next:** one recommended action across every project, with a few ranked alternatives.
 - **Inbox:** sessions that need you (blocked on a permission or question), sessions where it's
   your turn, and sessions still working, each with an **Open session** button.
 - **Projects:** each project's features by status, with a progress bar. Tap a feature to read its

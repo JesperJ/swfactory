@@ -1,6 +1,6 @@
 // Factory dashboard. No build step: plain ES modules, server-provided JSON, live via SSE.
 
-const STATUS_ORDER = ["building", "planned", "specced", "idea", "done"];
+const STATUS_ORDER = ["reviewing", "building", "planned", "specced", "idea", "done"];
 const SESSION_LABEL = { needs_you: "Needs you", your_turn: "Your turn", working: "Working", ended: "Ended" };
 const SESSION_RANK = { needs_you: 0, your_turn: 1, working: 2, ended: 3 };
 const STALE_MS = 20 * 60_000; // "working" with no hook event for this long is probably gone

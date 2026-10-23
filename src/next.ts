@@ -14,7 +14,7 @@ export const STALE_DAYS = 7; // a `building` feature with no Log entry for this 
 const REVIEW_WINDOW_MS = 48 * 3600_000; // a finished session older than this stops being urgent
 const BLOCKED_PENALTY = 100; // blocked work sinks below everything actionable
 
-export type NextKind = "answer" | "review" | "unstick" | "build" | "plan" | "spec";
+export type NextKind = "answer" | "review" | "approve" | "unstick" | "build" | "plan" | "spec";
 
 export interface NextItem {
   kind: NextKind;
@@ -125,6 +125,9 @@ function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
         return { ...base, kind: "unstick", action: "Unstick", score: 2, reason: `no activity for ${plural(stalled, "day")}` };
       return { ...base, kind: "unstick", action: "Continue", score: 3, reason: "in progress, nothing running" };
     }
+    case "reviewing":
+      // Above starting anything new: finishing what is nearly done beats widening the work.
+      return { ...base, kind: "approve", action: "Review", score: 2.5, reason: "built, waiting on review" };
     case "planned":
       return { ...base, kind: "build", action: "Build", score: 4, reason: "planned and ready to build" };
     case "specced":
