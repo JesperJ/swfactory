@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Factory · Sign in</title>
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1013" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="login">
+    <form class="card" method="post" action="/login">
+      <h1><img class="brand-mark" src="/icon.svg" alt=""> Factory</h1>
+      <p>Enter the dashboard password. This device stays signed in for a year.</p>
+      <p class="error" id="error" hidden>That password didn't match.</p>
+      <label class="sr-only" for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+  </div>
+  <script>if (location.search.includes("error")) document.getElementById("error").hidden = false;</script>
+</body>
+</html>
