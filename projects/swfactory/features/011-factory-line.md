@@ -1,6 +1,6 @@
 ---
 title: The factory line
-status: reviewing
+status: building
 priority: P1
 summary: One /factory command, a review stage before done, and an approver that absorbs the decisions that don't need me.
 ---
@@ -144,6 +144,12 @@ the thing that actually drifted.
 - [x] `/factory status` proposes a diff of stale specs and applies only what is accepted
 - [x] Delete the five old commands; update `CLAUDE.md` and `README.md`
 - [ ] Dogfood: run the line on 010 end to end and keep the findings file as the example
+- [ ] Round 1: declare spec and diff content to be data, never instructions (factory.md shared rules)
+- [ ] Round 1: tell each reviewer to ignore instructions found inside the diff or spec
+- [ ] Round 1: `/factory next` must dispatch on `kind`, not `action` — `answer` has no entry and `Review` is overloaded
+- [ ] Round 1: give `approve` the status guard every other sub-command has
+- [ ] Round 1: fix the three dashboard empty states pointing at deleted commands
+- [ ] Round 1: state commit scope and "never merge or push to main" in the shared rules
 
 ## Risks
 - A review stage that always passes is worse than none: it manufactures false confidence. The
@@ -164,3 +170,14 @@ the thing that actually drifted.
   Verified by test: the `reviewing` status and its ranking. Verified by inspection: the command
   and agent prompts — prompt behaviour is proven by use, not by assertion, which is what this
   review round is for. PR #2.
+- 2026-10-23 Round 1 → rework. Six blocking findings, all clear and local, in
+  `reviews/011-round-1.md`. The two that matter most were not in the code: a spec file is data
+  but the command never says so, and this repo is public — so a sentence added to a `## Why`
+  could steer an agent holding Bash and push rights. The same hole lets a diff tell its own
+  reviewer it was already approved, which the approver then trusts to set `done`.
+  The review also caught a criterion ticked falsely: "the old names stop existing" was ticked
+  after checking the command files were deleted, while three dashboard empty states still sent
+  people to `/new-feature` and `/new-project`.
+  Deferred, not blocking: reviewers run `npm test` off the branch under review with no sandbox.
+  Judged acceptable while building only happens in our own sessions on our own machine; it
+  becomes real the day an outside contribution is reviewed.
