@@ -1,10 +1,14 @@
 ---
-title: Self-host behind a Cloudflare Tunnel instead of Fly.io
+title: Self-host instead of Fly.io
 date: 2026-10-23
 status: accepted
 ---
 
-# Self-host behind a Cloudflare Tunnel instead of Fly.io
+# Self-host instead of Fly.io
+
+> The self-hosting half of this decision is in force. The Cloudflare Tunnel half was not
+> adopted — see `2026-10-23-defer-public-access.md`. The tunnel reasoning below is kept
+> because it still describes the shape of whatever publishes this later.
 
 ## Context
 The original plan was Fly.io. Two things changed it:

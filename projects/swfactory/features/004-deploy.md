@@ -1,8 +1,8 @@
 ---
 title: Deploy so it's reachable from mobile
-status: building
+status: planned
 priority: P1
-summary: Self-hosted in Docker at home, published through a containerised Cloudflare Tunnel.
+summary: Self-hosted in Docker at home. LAN access works; publishing it is deferred.
 ---
 
 # Deploy so it's reachable from mobile
@@ -36,6 +36,8 @@ See `decisions/2026-10-23-self-host-instead-of-fly.md` for why this replaced Fly
 ## Open questions
 - Which hostname, on which Cloudflare-managed domain?
 - Cloudflare Access, or is the password enough for a URL nobody is told?
+- Deferred 2026-10-23: no Cloudflare zone, and neither paying for a domain nor a password-only
+  public URL was worth it yet. See `decisions/2026-10-23-defer-public-access.md`.
 
 ## Plan
 Compose two containers on a dedicated network:
@@ -74,3 +76,7 @@ read-only GitHub token or a read-only bind mount of this repo.
   matched the file immediately. Session data survived the container being destroyed and
   replaced. Note this serves the working tree, uncommitted edits included — if the dashboard
   ever moves off this machine, switch to `SPECS_GIT_URL`.
+- 2026-10-23 Public access deferred. No domain on Cloudflare, so the tunnel is blocked on either
+  buying one (~$10/yr, and Cloudflare then sees plaintext) or Tailscale Funnel (free, no domain,
+  TLS terminates locally, but a password-only public URL). Chose neither for now; LAN-only is
+  enough until the dashboard proves itself. The remaining tasks stand as written.
