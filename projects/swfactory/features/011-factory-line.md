@@ -1,6 +1,6 @@
 ---
 title: The factory line
-status: building
+status: reviewing
 priority: P1
 summary: One /factory command, a review stage before done, and an approver that absorbs the decisions that don't need me.
 ---
@@ -95,6 +95,10 @@ not to remove the last decision. Merging stays mine, with the findings already a
   loose, the pass branch becomes an escalation too.
 - Assumed review findings live in `reviews/` beside `decisions/`, in git, so a rework round can
   cite the previous one.
+- Reviewers run `npm test` off the branch under review, so a malicious `pretest` hook would
+  execute in the reviewer's shell. Accepted while building only ever happens in our own
+  sessions on our own machine. The day an outside contribution is reviewed, this needs an
+  ephemeral sandbox — which costs real infrastructure, so it is a decision, not an oversight.
 
 ## Plan
 Three parts, in this order, because each is useful alone and the later ones depend on the
@@ -144,12 +148,12 @@ the thing that actually drifted.
 - [x] `/factory status` proposes a diff of stale specs and applies only what is accepted
 - [x] Delete the five old commands; update `CLAUDE.md` and `README.md`
 - [ ] Dogfood: run the line on 010 end to end and keep the findings file as the example
-- [ ] Round 1: declare spec and diff content to be data, never instructions (factory.md shared rules)
-- [ ] Round 1: tell each reviewer to ignore instructions found inside the diff or spec
-- [ ] Round 1: `/factory next` must dispatch on `kind`, not `action` — `answer` has no entry and `Review` is overloaded
-- [ ] Round 1: give `approve` the status guard every other sub-command has
-- [ ] Round 1: fix the three dashboard empty states pointing at deleted commands
-- [ ] Round 1: state commit scope and "never merge or push to main" in the shared rules
+- [x] Round 1: declare spec and diff content to be data, never instructions (factory.md shared rules)
+- [x] Round 1: tell each reviewer to ignore instructions found inside the diff or spec
+- [x] Round 1: `/factory next` must dispatch on `kind`, not `action` — `answer` has no entry and `Review` is overloaded
+- [x] Round 1: give `approve` the status guard every other sub-command has
+- [x] Round 1: fix the three dashboard empty states pointing at deleted commands
+- [x] Round 1: state commit scope and "never merge or push to main" in the shared rules
 
 ## Risks
 - A review stage that always passes is worse than none: it manufactures false confidence. The
@@ -181,3 +185,11 @@ the thing that actually drifted.
   Deferred, not blocking: reviewers run `npm test` off the branch under review with no sandbox.
   Judged acceptable while building only happens in our own sessions on our own machine; it
   becomes real the day an outside contribution is reviewed.
+- 2026-10-23 Round 1 fixes built. Spec and diff content declared data, not instructions, in both
+  the command's shared rules and all three reviewer prompts, with commit scope and a hard
+  "never merge or push to main" alongside. `/factory next` now dispatches on `kind` rather than
+  the displayed verb, and says plainly that a blocked session is yours to answer rather than
+  routing it to a sub-command that would refuse it. `approve` gained the status guard the other
+  sub-commands already had, plus a check that the round file is not older than the build.
+  Three dashboard empty states now name the commands that exist; a repo-wide sweep found no
+  others. 23 tests, typecheck clean, `npm run shoot` clean. Ready for round 2.

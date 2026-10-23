@@ -156,7 +156,7 @@ function renderNext() {
   const live = items.filter((i) => !i.blocked);
   const blocked = items.filter((i) => i.blocked);
   if (!live.length && !blocked.length)
-    return empty("Nothing waiting", "No sessions need you and no feature is ready to move. Add an idea with <code>/new-feature</code>.");
+    return empty("Nothing waiting", "No sessions need you and no feature is ready to move. Add an idea with <code>/factory spec</code>.");
 
   const [top, ...rest] = live;
   const link = (i) => (i.projectSlug ? docHash(i.projectSlug, i.feature ?? undefined) : null);
@@ -255,7 +255,7 @@ function projectCard(p, { showAllDone = false } = {}) {
       ${showDone ? done.map((f) => featureRow(p, f)).join("") : ""}
     </ul>
     ${done.length && !showAllDone ? `<button class="more" data-toggle-done="${esc(p.slug)}">${showDone ? "Hide done" : `Show ${done.length} done`}</button>` : ""}
-    ${!p.features.length ? `<p class="prompt">No features yet. Run <code>/new-feature</code> in Claude.</p>` : ""}
+    ${!p.features.length ? `<p class="prompt">No features yet. Run <code>/factory spec</code> in Claude.</p>` : ""}
   </article>`;
 }
 
@@ -267,7 +267,7 @@ function renderProjects(focus) {
     return `<button class="filter" data-filter="${st}" aria-pressed="${featureFilter === st}">${st === "all" ? "All" : st[0].toUpperCase() + st.slice(1)} ${n}</button>`;
   });
   if (!state.projects.length)
-    return empty("No projects yet", "Run <code>/new-project</code> in Claude inside this repo, then push.");
+    return empty("No projects yet", "Run <code>/factory project</code> in Claude inside this repo, then push.");
   if (focus) {
     const p = projectBySlug(focus);
     if (!p) return empty("Project not found", `No project called ${esc(focus)}.`);
