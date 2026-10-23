@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: reviewing
+status: building
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -130,6 +130,9 @@ more here than the few seconds of latency it costs.
 - [x] A `failed` job shows its reason on the dashboard rather than disappearing
 - [x] systemd user unit file and the README section to install it
 - [ ] Dogfood: queue a job from the phone and watch the session appear in the Inbox
+- [ ] Round 2: the runner reconciles running jobs against tmux and reports `done` when a session exits
+- [ ] Round 2: an unfinished job older than a few hours stops blocking new work, so a dead runner cannot wedge a feature
+- [ ] Round 2: the UI offers the action again for a stale job instead of a permanent pill
 - [x] Round 1: `KIND_COMMAND.approve` queues a build for a feature at `reviewing`; it must map to `review`
 - [x] Round 1: allow `review` as a job command, or the hero button for a reviewing feature cannot work
 - [x] Round 1: a failed job blocks retry for 24h although the store would accept one
@@ -202,3 +205,6 @@ more here than the few seconds of latency it costs.
   one again".
   Escalated rather than reworked because the fix is a design choice, not a correction: three
   mechanisms could tell a job it has finished and they have different costs. See below.
+- 2026-10-23 Escalation answered: both mechanisms, 1 and 3. The runner reconciles against tmux
+  so a finished session closes its job; the guard gains a time bound so a dead runner cannot
+  wedge a feature permanently. Neither protects against the other's failure, which is why both.
