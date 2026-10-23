@@ -128,7 +128,7 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
 - [x] `upsert` returns `{ session, statusChanged }`; wire `POST /api/hooks` to the notifier
 - [x] Wire `POST /api/jobs/:id/status`, binding the row it already fetches for its 404 check
 - [x] A test that both endpoints keep their response and timing when the sender throws or hangs
-- [ ] `.env.example`, README and the ntfy walkthrough; record the ntfy-over-Web-Push decision
+- [x] `.env.example`, README and the ntfy walkthrough; record the ntfy-over-Web-Push decision
 - [ ] Dogfood: subscribe the phone, make a live session hit a permission prompt, fail a job
 
 ## Log
