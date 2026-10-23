@@ -7,6 +7,8 @@ import {
   ntfySender,
   fromEnv,
   COOLDOWN_MS,
+  GLOBAL_LIMIT,
+  GLOBAL_WINDOW_MS,
   type SessionEvent,
   type JobEvent,
   type Sender,
@@ -375,4 +377,110 @@ test("failed jobs are not cooled; each failure is its own", async () => {
   n.maybeSend(job({ feature: "007-private-specs" }));
   await flush();
   assert.equal(sent.length, 2);
+});
+
+// --- global rate limit ------------------------------------------------------
+// The cooldown is per session, so N session ids give N buckets and nothing cools jobs at all.
+// This is the ceiling that holds regardless.
+
+test("a burst past the global limit stops, and says so once rather than per drop", async () => {
+  const clock = { t: 0 };
+  const logged: string[] = [];
+  const s = spy();
+  const n = new Notifier({ sender: s, baseUrl: BASE, now: () => clock.t, log: (m) => logged.push(m) });
+
+  for (let i = 0; i < GLOBAL_LIMIT + 5; i++) n.maybeSend(session({ id: `s${i}` }));
+  await flush();
+  assert.equal(s.sent.length, GLOBAL_LIMIT, "the ceiling holds however many distinct sessions block");
+  assert.equal(logged.length, 1, `one line per burst, not per drop: ${logged.join(" | ")}`);
+  assert.match(logged[0], /dropping/);
+});
+
+test("the window slides, so a quiet ten minutes restores the budget", async () => {
+  const clock = { t: 0 };
+  const s = spy();
+  const n = new Notifier({ sender: s, baseUrl: BASE, now: () => clock.t });
+  for (let i = 0; i < GLOBAL_LIMIT + 3; i++) n.maybeSend(session({ id: `s${i}` }));
+  await flush();
+  assert.equal(s.sent.length, GLOBAL_LIMIT);
+
+  clock.t += GLOBAL_WINDOW_MS;
+  n.maybeSend(session({ id: "later" }));
+  await flush();
+  assert.equal(s.sent.length, GLOBAL_LIMIT + 1);
+});
+
+test("the limit covers jobs too, which nothing else throttles", async () => {
+  const clock = { t: 0 };
+  const s = spy();
+  const n = new Notifier({ sender: s, baseUrl: BASE, now: () => clock.t, log: () => {} });
+  for (let i = 0; i < GLOBAL_LIMIT + 5; i++) n.maybeSend(job({ feature: `f${i}` }));
+  await flush();
+  assert.equal(s.sent.length, GLOBAL_LIMIT);
+});
+
+test("events that would send nothing do not spend the budget", async () => {
+  const clock = { t: 0 };
+  const s = spy();
+  const n = new Notifier({ sender: s, baseUrl: BASE, now: () => clock.t });
+  // None of these notify, so none may consume a slot — otherwise ordinary traffic would
+  // exhaust the ceiling and silence the one event that mattered.
+  for (let i = 0; i < 50; i++) {
+    n.maybeSend(session({ id: `q${i}`, status: "your_turn" }));
+    n.maybeSend(job({ feature: `d${i}`, status: "done" }));
+  }
+  await flush();
+  n.maybeSend(session({ id: "real" }));
+  await flush();
+  assert.equal(s.sent.length, 1, "the budget must only be spent on something actually sent");
+});
+
+test("a session held off by its own cooldown does not spend the global budget either", async () => {
+  const clock = { t: 0 };
+  const s = spy();
+  const n = new Notifier({ sender: s, baseUrl: BASE, now: () => clock.t });
+  for (let i = 0; i < 20; i++) n.maybeSend(session({ id: "stuck" }));
+  await flush();
+  assert.equal(s.sent.length, 1);
+  for (let i = 0; i < GLOBAL_LIMIT - 1; i++) n.maybeSend(session({ id: `other${i}` }));
+  await flush();
+  assert.equal(s.sent.length, GLOBAL_LIMIT, "the stuck session burned one slot, not twenty");
+});
+
+// --- long paths -------------------------------------------------------------
+
+test("a deep working directory is still named by its basename, not a middle component", () => {
+  const deep = "/home/jesper/code/repos/acme-corporation/services/billing-gateway";
+  const n = notificationFor(
+    session({ repo: null, cwd: deep }, { link: () => ({ project: null, feature: null }) }),
+    BASE,
+  );
+  assert.equal(n?.title, "Needs you: billing-gateway");
+});
+
+test("a path long enough to exhaust the cap before its first separator still names something", () => {
+  const icloud = "/Users/jesper/Library/Mobile Documents/com~apple~CloudDocs/work/clientproj";
+  const n = notificationFor(
+    session({ repo: null, cwd: icloud }, { link: () => ({ project: null, feature: null }) }),
+    BASE,
+  );
+  assert.equal(n?.title, "Needs you: clientproj", "a title of just an ellipsis names nothing");
+});
+
+test("a long remote names the repository, not the organisation above it", () => {
+  const remote = "https://git.enterprise.example.com/departments/platform-engineering/infra-tools";
+  const n = notificationFor(
+    session({ repo: remote, cwd: null }, { link: () => ({ project: null, feature: null }) }),
+    BASE,
+  );
+  assert.equal(n?.title, "Needs you: infra-tools");
+});
+
+test("a single segment longer than the cap is still clipped", () => {
+  const n = notificationFor(
+    session({ repo: null, cwd: `/tmp/${"x".repeat(90)}` }, { link: () => ({ project: null, feature: null }) }),
+    BASE,
+  );
+  assert.ok(n!.title.length < 90, "the cap still applies to the segment itself");
+  assert.match(n!.title, /…$/);
 });

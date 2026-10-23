@@ -262,6 +262,10 @@ test("Stop and SessionEnd notify nothing", async () => {
   await hook(app, { ...base, hook_event_name: "SessionEnd" });
   await flush();
   assert.equal(sent.length, 0);
+  // Positive control in the same test: without it this passes with the notifier deleted.
+  await hook(app, { session_id: "s2b", hook_event_name: "Notification", message: "blocked" });
+  await flush();
+  assert.equal(sent.length, 1, "the notifier was wired in all along");
 });
 
 test("a dismissed session that genuinely blocks again does notify", async () => {
@@ -361,4 +365,54 @@ test("a notifier whose sender throws still leaves the endpoints at 200", async (
   assert.equal(res.status, 200);
   await flush();
   assert.match(logged.join(" "), /unreachable/, "the failure is logged, not raised");
+});
+
+// --- signing in from a notification ------------------------------------------
+// A fragment survives the 302 to /login but not the form POST, so a notification tapped on a
+// logged-out phone used to land on the default tab. login.html carries it in the query; these
+// cover the half that is server-side.
+
+test("signing in returns you to where the notification pointed", async () => {
+  const app = setup();
+  const res = await app.request("/login?next=%23%2Fnext%2Fdoc%2Fswfactory%2F006-push-notifications", {
+    method: "POST",
+    body: new URLSearchParams({ password: "pw" }),
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+  });
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get("location"), "/#/next/doc/swfactory/006-push-notifications");
+});
+
+test("a wrong password keeps the destination, so the second attempt still lands right", async () => {
+  const app = setup();
+  const res = await app.request("/login?next=%23%2Finbox", {
+    method: "POST",
+    body: new URLSearchParams({ password: "nope" }),
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+  });
+  assert.equal(res.headers.get("location"), "/login?error=1&next=%23%2Finbox");
+});
+
+test("next can only ever be one of our own fragments", async () => {
+  const app = setup();
+  // It is appended to "/", so it can never name another origin — but it must not be able to
+  // carry a path, a scheme, or anything that isn't the hash route it claims to be.
+  for (const bad of ["https://evil.example.com", "//evil.example.com", "/etc/passwd", "#", "#x", "javascript:alert(1)", "#/a<script>"]) {
+    const res = await app.request(`/login?next=${encodeURIComponent(bad)}`, {
+      method: "POST",
+      body: new URLSearchParams({ password: "pw" }),
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+    });
+    assert.equal(res.headers.get("location"), "/", `${bad} must be dropped, not echoed`);
+  }
+});
+
+test("with no next, signing in goes to the dashboard as before", async () => {
+  const app = setup();
+  const res = await app.request("/login", {
+    method: "POST",
+    body: new URLSearchParams({ password: "pw" }),
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+  });
+  assert.equal(res.headers.get("location"), "/");
 });

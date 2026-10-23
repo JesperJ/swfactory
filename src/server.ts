@@ -77,13 +77,20 @@ export function createApp(cfg: Config) {
     if (isLoggedIn(c, cfg.password)) return c.redirect("/");
     return c.html(readFileSync(join(PUBLIC, "login.html"), "utf8"));
   });
+  // Only ever a fragment of our own routing shape, so the redirect target is always this origin
+  // at "/" — `next` cannot name a host, a scheme, or a path. Anything else is dropped silently
+  // rather than echoed back.
+  const safeNext = (v: string | undefined): string => (v && /^#\/[\w\-./~%]*$/.test(v) ? v : "");
+
   app.post("/login", async (c) => {
     const form = await c.req.parseBody();
     if (typeof form.password === "string" && checkPassword(form.password, cfg.password)) {
       logIn(c, cfg.password);
-      return c.redirect("/");
+      return c.redirect(`/${safeNext(c.req.query("next"))}`);
     }
-    return c.redirect("/login?error=1");
+    // Keep it across a wrong password too, or the second attempt is the one that loses it.
+    const next = safeNext(c.req.query("next"));
+    return c.redirect(`/login?error=1${next ? `&next=${encodeURIComponent(next)}` : ""}`);
   });
   app.post("/logout", (c) => {
     logOut(c);
@@ -182,7 +189,15 @@ export function createApp(cfg: Config) {
       sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
     });
     notify("jobs");
-    if (job) notifier.maybeSend({ kind: "job", job, previousStatus: before.status });
+    // Field by field for the same reason the session call site is: `JobEvent.job` is a `Pick`,
+    // which is a compile-time shape only, and the row carries `error` — runner output that can
+    // hold an absolute path, which is the one thing the notification must never contain.
+    if (job)
+      notifier.maybeSend({
+        kind: "job",
+        job: { project: job.project, feature: job.feature, command: job.command, status: job.status },
+        previousStatus: before.status,
+      });
     return c.json({ job });
   });
 

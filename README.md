@@ -163,10 +163,10 @@ printf 'FACTORY_PUBLIC_URL=%s\n' 'http://factory.local:3000' >> .env   # as your
 Deployed on Fly.io, where appending to `.env` does nothing at all:
 
 ```sh
-fly secrets set \
-  NTFY_TOPIC="factory-$(openssl rand -hex 16)" \
-  FACTORY_PUBLIC_URL='https://<your app>.fly.dev'
-fly secrets list | grep NTFY_TOPIC   # confirm it took; the value is not shown
+# Print it before shipping it: fly never shows a secret's value again, and you need it on the
+# phone in a moment.
+TOPIC="factory-$(openssl rand -hex 16)"; echo "$TOPIC"
+fly secrets set NTFY_TOPIC="$TOPIC" FACTORY_PUBLIC_URL='https://<your app>.fly.dev'
 ```
 
 Set `NTFY_TOPIC` without `FACTORY_PUBLIC_URL` and the dashboard says so on startup — the
@@ -176,7 +176,7 @@ On the phone, once:
 
 1. Install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy),
    [iOS](https://apps.apple.com/app/ntfy/id1625396347)).
-2. **+** → paste the topic exactly as it is in `.env` (just the topic, not a URL) → Subscribe.
+2. **+** → paste the topic you just set, exactly (just the topic, not a URL) → Subscribe.
 3. Check it end to end: `/factory build` something from the dashboard and let it hit a
    permission prompt. The notification names the project, the feature and the host; tapping it
    opens the inbox. Fail a job and the notification opens that feature, where the Retry button

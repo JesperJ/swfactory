@@ -54,10 +54,14 @@ function clean(v: string | null | undefined): string | null {
 // A repo is normally a remote URL and a cwd is always a path, so only the last segment of
 // either is ever used. That names the thing without putting a path in the notification, and it
 // is the same reduction `sessionCard` does in the UI.
+// Split first, clip second. The other order clips the whole path to MAX_TEXT and then pops the
+// last segment *of the truncated prefix*, so a deep path gets named after a middle directory —
+// or, once the cap falls inside the first component, after nothing at all.
 function lastSegment(v: string | null | undefined): string | null {
-  const s = clean(v);
-  if (!s) return null;
-  const last = s
+  if (!v) return null;
+  const whole = v.replace(/\s+/g, " ").trim();
+  if (!whole) return null;
+  const last = whole
     .replace(/\.git$/i, "")
     .replace(/[/\\]+$/, "")
     .split(/[/\\]/)
@@ -96,6 +100,19 @@ export function sessionWouldNotify(e: SessionEvent): boolean {
   return true;
 }
 
+// The job half of the same split, so the cooldown and the rate limit can both gate on "would
+// this send anything" without building the text first. `forJob` calls it, so there is one copy.
+export function jobWouldNotify(e: JobEvent): boolean {
+  if (e.job.status !== "failed") return false;
+  // Re-reporting a status the job already had is not a new failure.
+  if (e.previousStatus === "failed") return false;
+  return true;
+}
+
+export function wouldNotify(event: FactoryEvent): boolean {
+  return event.kind === "session" ? sessionWouldNotify(event) : jobWouldNotify(event);
+}
+
 export function notificationFor(event: FactoryEvent, baseUrl?: string | null): Notification | null {
   return event.kind === "session" ? forSession(event, baseUrl) : forJob(event, baseUrl);
 }
@@ -116,9 +133,7 @@ function forSession(e: SessionEvent, baseUrl?: string | null): Notification | nu
 }
 
 function forJob(e: JobEvent, baseUrl?: string | null): Notification | null {
-  if (e.job.status !== "failed") return null;
-  // Re-reporting a status the job already had is not a new failure.
-  if (e.previousStatus === "failed") return null;
+  if (!jobWouldNotify(e)) return null;
   const project = clean(e.job.project) ?? "unknown project";
   const feature = clean(e.job.feature);
   // Not the Inbox: it renders sessions, never jobs, so a tap would land on "All quiet" seconds
@@ -188,6 +203,12 @@ export function ntfySender(cfg: {
 // One stuck session must not be able to buzz the phone every time it restates itself.
 export const COOLDOWN_MS = 10 * 60_000;
 
+// And nothing at all may buzz it more than this, whatever the per-session cooldown says.
+// Ten in ten minutes is well above a normal day — two or three sessions blocking at once is
+// the busy case the spec describes — and well below the point where you stop reading them.
+export const GLOBAL_LIMIT = 10;
+export const GLOBAL_WINDOW_MS = 10 * 60_000;
+
 export interface NotifierOptions {
   sender?: Sender | null;
   baseUrl?: string | null;
@@ -208,12 +229,42 @@ export class Notifier {
   // minutes. Expired entries are pruned on use, so the map holds roughly the sessions that
   // blocked in the last ten minutes.
   private readonly lastSent = new Map<string, number>();
+  // Timestamps of everything sent inside the global window, oldest first.
+  private recent: number[] = [];
+  private limiting = false;
 
   constructor(opts: NotifierOptions = {}) {
     this.sender = opts.sender ?? null;
     this.baseUrl = opts.baseUrl ?? null;
     this.log = opts.log ?? ((msg) => console.error(msg));
     this.now = opts.now ?? Date.now;
+  }
+
+  // The backstop the per-session cooldown cannot be: that cooldown gives N buckets to N session
+  // ids, and nothing cools jobs at all, so anything holding a token can mint ids or cycle a job
+  // through `failed` and buzz the phone without limit. A spec that worries about training you to
+  // ignore the channel needs a ceiling, not just a per-session gap — and `priority: 4` on every
+  // message means each one costs more attention than it did when this was first skipped.
+  //
+  // Drops rather than queues: a notification you get ten minutes late is worse than one you
+  // never got, because by then the dashboard already tells you.
+  private rateLimited(): boolean {
+    const now = this.now();
+    while (this.recent.length && now - this.recent[0] >= GLOBAL_WINDOW_MS) this.recent.shift();
+    if (this.recent.length >= GLOBAL_LIMIT) {
+      // Once per burst, not once per drop: the log is the thing you read when the phone went
+      // quiet, and it should say so rather than bury it.
+      if (!this.limiting) {
+        this.limiting = true;
+        this.log(
+          `[notify] ${GLOBAL_LIMIT} notifications in ${GLOBAL_WINDOW_MS / 60_000} minutes; dropping further ones until the window clears.`,
+        );
+      }
+      return true;
+    }
+    this.limiting = false;
+    this.recent.push(now);
+    return false;
   }
 
   private cooling(sessionId: string): boolean {
@@ -245,15 +296,16 @@ export class Notifier {
     const sender = this.sender;
     if (!sender) return;
     try {
-      if (event.kind === "session") {
-        // Both gates run before `notificationFor`, because that is what reads the specs. A
-        // session that flaps needs_you → working → needs_you is the same stuck session, not a
-        // second thing to know about, and it should not pay for a spec read it will discard.
-        // Jobs are not cooled: `failed` is terminal so there is only ever one per job, and two
-        // jobs failing at once are two things to know about.
-        if (!sessionWouldNotify(event)) return;
-        if (this.cooling(event.session.id)) return;
-      }
+      // Every gate runs before `notificationFor`, because that is what reads the specs, and
+      // because the rate limit must only spend budget on something that would really be sent.
+      if (!wouldNotify(event)) return;
+      // A session that flaps needs_you → working → needs_you is the same stuck session, not a
+      // second thing to know about, and it should not pay for a spec read it will discard.
+      // Jobs are not cooled: `failed` is terminal so there is only ever one per job, and two
+      // jobs failing at once are two things to know about.
+      if (event.kind === "session" && this.cooling(event.session.id)) return;
+      // After the per-session gate, so one stuck session cannot eat the global budget.
+      if (this.rateLimited()) return;
       const n = notificationFor(event, this.baseUrl);
       if (!n) return;
       void sender

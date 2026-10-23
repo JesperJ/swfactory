@@ -191,7 +191,10 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   already states about itself actually true — "not on the request path", "a property of the
   code", "would otherwise leak one handle". Three reviewers independently found the same
   synchronous `loadProjects()` in the hook handler.
-- 2026-10-23 Round 1 rework done: the blocking finding and all eleven minors. Jobs now link to
+- 2026-10-23 Round 1 rework: the blocking finding and nine of the eleven minors. (Corrected
+  2026-10-23 after round 2 caught the overclaim: this line originally said "all eleven". The
+  global cap and the logged-out hash drop were not done, and the whole-row fix was done for
+  sessions but not jobs. All three are done now — see the round 2 entry.) Jobs now link to
   the doc sheet (`#/next/doc/<project>/<feature>`), which renders the failed job and its Retry
   button, instead of the Inbox, which renders sessions only. `maybeSend` defers with
   `setImmediate` and the cooldown gates ahead of the specs read, so the hook handler no longer
@@ -204,21 +207,21 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
 - 2026-10-23 Back to reviewing after the round 1 rework. PR #5 updated.
 
 ### Round 2 rework
-- [ ] **Correct the round 1 Log claim.** It says "the blocking finding and all eleven minors".
+- [x] **Correct the round 1 Log claim.** It says "the blocking finding and all eleven minors".
       Two were never taken and one was half taken. Make the claim true by doing them rather
       than by softening the sentence.
-- [ ] Global rate limit (round 1 security 3): the per-session cooldown gives N buckets to N
+- [x] Global rate limit (round 1 security 3): the per-session cooldown gives N buckets to N
       session ids, and `priority: 4` now rides every message, so the cost of each one went up
       while the throttle stayed the same. The spec already names this as the right fix.
-- [ ] Carry the fragment through login (round 1 UX 2): a logged-out cold load drops `#/inbox`
+- [x] Carry the fragment through login (round 1 UX 2): a logged-out cold load drops `#/inbox`
       and the deeper `#/next/doc/...`, which matters more now that job notifications are deep
       links, and iOS "Add to Home Screen" means the first tap always goes through Safari.
-- [ ] Finish round 1 security 4: the job call site still passes the whole row, `error` included
+- [x] Finish round 1 security 4: the job call site still passes the whole row, `error` included
       — the half that was not done when the Log said it was.
-- [ ] `lastSegment` before `clean`, not after (round 2 code 1, security 4, UX 1 — all three).
+- [x] `lastSegment` before `clean`, not after (round 2 code 1, security 4, UX 1 — all three).
       A rework regression: `MAX_TEXT` 120→60 plus `cwd` as an input means a long path now
       titles a notification `Needs you: …` and names nothing.
-- [ ] README: the Fly block generates a topic and discards it, then step 2 says to read it from
+- [x] README: the Fly block generates a topic and discards it, then step 2 says to read it from
       a `.env` the Fly path never writes (round 2 UX 2). He is about to follow this walkthrough.
 - 2026-10-23 Review round 2: 0 blocking from all three reviewers. Round 1's blocking finding
   verified resolved live at 390px — the sheet opens itself and the Retry button is above the
@@ -227,3 +230,20 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   done for sessions but not jobs. Jesper's call: make the claim true rather than soften it.
   Also taking the one rework regression all three reviewers found independently — `clean` runs
   before `lastSegment` splits, so a path over 60 chars titles a notification `Needs you: …`.
+- 2026-10-23 Round 2 rework done. The three outstanding round 1 items are now genuinely done:
+  a global ceiling of 10 notifications per 10 minutes, which is the limit the per-session
+  cooldown cannot be (N session ids give N buckets, and nothing cools jobs); the login flow
+  carries the fragment through in a query parameter, validated to our own hash shape, so a
+  notification tapped on a logged-out phone returns to the thing it named; and the job call
+  site now builds its projection field by field like the session one, keeping the runner-
+  supplied `error` off the object. Also fixed the rework regression all three reviewers found
+  independently: `lastSegment` now splits before clipping, so a deep iCloud path titles
+  `Needs you: clientproj` rather than a bare ellipsis. README no longer tells you to read the
+  topic from a `.env` the Fly path never writes.
+  Verified live against real ntfy.sh: 18 notification-worthy events produced exactly 10
+  messages and one log line; a 74-character path named its basename; the login redirect
+  honoured a deep `next` and dropped `https://evil.example.com`. 102 tests, typecheck clean.
+  Left undone, deliberately: round 2 UX 3 — the doc sheet's Retry button labels from the
+  feature's current recommended action, so a build that reached `reviewing` and then failed
+  offers "Retry review". That is pre-existing `startControl` behaviour in another feature's
+  code, and worth its own spec rather than a drive-by here.
