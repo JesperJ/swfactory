@@ -190,3 +190,15 @@ more here than the few seconds of latency it costs.
   is one the API would accept — the class of bug round 1 found.
   46 tests, typecheck clean, shoot clean. Also cancelled jobs 2 and 3, queued by the UX reviewer
   through the old mapping.
+- 2026-10-23 Round 2 → escalate. Round 1's five findings are all verified fixed, independently
+  by two reviewers, one of which tapped the real controls on a phone. Security cleared the
+  rework and recorded a judgement about what `review` in the job enum unlocks.
+  Code found a new blocking defect that both earlier rounds missed and that this round did not
+  introduce: **nothing ever reports a job as `done`**. The runner reports `running` or `failed`
+  and stops there; `/api/hooks` never looks at the jobs table. So a job that starts and finishes
+  normally stays `running` forever, the duplicate guard blocks every future tap for that
+  feature, and the "Started" pill never clears. It is the ordinary success path, and it inverts
+  the criterion it was built for: "two taps don't start two sessions" became "no tap ever starts
+  one again".
+  Escalated rather than reworked because the fix is a design choice, not a correction: three
+  mechanisms could tell a job it has finished and they have different costs. See below.
