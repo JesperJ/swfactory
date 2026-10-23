@@ -5,12 +5,12 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Store } from "./db.ts";
+import { Store, isJobCommand, JOB_COMMANDS } from "./db.ts";
 import { parseHook } from "./hooks.ts";
 import { linkSession } from "./match.ts";
-import { rankNext } from "./next.ts";
+import { featureAction, rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
-import { checkPassword, isLoggedIn, logIn, logOut, requireHookToken, requireUi } from "./auth.ts";
+import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
 
 const ROOT = resolve(fileURLToPath(import.meta.url), "../..");
@@ -21,6 +21,7 @@ export interface Config {
   store: Store;
   password: string;
   hookToken: string;
+  runnerToken: string;
   sync?: () => Promise<boolean>;
 }
 
@@ -32,7 +33,7 @@ export function createApp(cfg: Config) {
   app.get("/healthz", (c) => c.text("ok"));
 
   // --- Hooks (bearer token) ---------------------------------------------------
-  app.post("/api/hooks", requireHookToken(cfg.hookToken), async (c) => {
+  app.post("/api/hooks", requireBearer(cfg.hookToken), async (c) => {
     let payload: Record<string, unknown>;
     try {
       payload = await c.req.json();
@@ -67,12 +68,28 @@ export function createApp(cfg: Config) {
   // --- Dashboard (logged in) --------------------------------------------------
   const ui = requireUi(cfg.password);
   app.get("/", ui, (c) => c.html(readFileSync(join(PUBLIC, "index.html"), "utf8")));
-  app.use("/api/*", async (c, next) => (c.req.path === "/api/hooks" ? next() : ui(c, next)));
+  // Everything under /api needs the UI cookie except the two machine entrypoints, which carry
+  // their own bearer tokens: the hooks, and the runner's claim/report pair under /api/jobs/.
+  // POST /api/jobs itself is the UI queueing work, so it stays behind the cookie.
+  const machineRoute = (path: string) => path === "/api/hooks" || path.startsWith("/api/jobs/");
+  app.use("/api/*", async (c, next) => (machineRoute(c.req.path) ? next() : ui(c, next)));
 
   app.get("/api/state", (c) => {
     const projects = loadProjects(cfg.specsDir);
     const sessions = cfg.store.list().map((s) => ({ ...s, ...linkSession(s, projects) }));
-    return c.json({ projects, sessions, next: rankNext(projects, sessions), now: new Date().toISOString() });
+    // Each feature carries what it needs next, so every view can offer the same button without
+    // re-deriving the rules. One mapping, server-side; the UI is told, not left to work it out.
+    const annotated = projects.map((p) => ({
+      ...p,
+      features: p.features.map((f) => ({ ...f, next: featureAction(f) })),
+    }));
+    return c.json({
+      projects: annotated,
+      sessions,
+      jobs: cfg.store.listJobs(),
+      next: rankNext(projects, sessions),
+      now: new Date().toISOString(),
+    });
   });
 
   app.get("/api/docs/:project/:feature?", (c) => {
@@ -84,6 +101,60 @@ export function createApp(cfg: Config) {
     const ok = cfg.store.dismiss(c.req.param("id"));
     if (ok) notify("sessions");
     return c.json({ ok });
+  });
+
+  // --- Jobs -------------------------------------------------------------------
+  // Queued by the UI, claimed by the host-side runner. The dashboard never executes anything;
+  // a job carries a project, a feature and one of three commands, never a shell string.
+  app.post("/api/jobs", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const project = typeof body.project === "string" ? body.project : "";
+    const feature = typeof body.feature === "string" && body.feature ? body.feature : null;
+    if (!project) return c.json({ error: "project is required" }, 400);
+    if (!isJobCommand(body.command))
+      return c.json({ error: `command must be one of ${JOB_COMMANDS.join(", ")}` }, 400);
+    // Refuse work for something that isn't in the specs, so a job can only ever name real work.
+    const projects = loadProjects(cfg.specsDir);
+    const p = projects.find((x) => x.slug === project);
+    if (!p) return c.json({ error: `unknown project ${project}` }, 404);
+    if (feature && !p.features.some((f) => f.slug === feature))
+      return c.json({ error: `unknown feature ${feature}` }, 404);
+
+    const { job, created } = cfg.store.enqueue({ project, feature, command: body.command });
+    notify("jobs");
+    return c.json({ job, created }, created ? 201 : 200);
+  });
+
+  app.get("/api/jobs/running", requireBearer(cfg.runnerToken), (c) => c.json({ jobs: cfg.store.listRunning() }));
+
+  app.get("/api/jobs/next", requireBearer(cfg.runnerToken), (c) => {
+    const job = cfg.store.claimNext();
+    return c.json({ job: job ?? null });
+  });
+
+  app.post("/api/jobs/:id/status", requireBearer(cfg.runnerToken), async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const id = Number(c.req.param("id"));
+    if (!Number.isInteger(id) || !cfg.store.job(id)) return c.json({ error: "no such job" }, 404);
+    const status = body.status;
+    if (status !== "running" && status !== "done" && status !== "failed")
+      return c.json({ error: "status must be running, done or failed" }, 400);
+    const job = cfg.store.setJobStatus(id, status, {
+      error: typeof body.error === "string" ? body.error.slice(0, 500) : null,
+      sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
+    });
+    notify("jobs");
+    return c.json({ job });
   });
 
   app.post("/api/specs/sync", async (c) => {
@@ -140,6 +211,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     store: new Store(join(dataDir, "factory.db")),
     password: required("FACTORY_PASSWORD"),
     hookToken: required("FACTORY_HOOK_TOKEN"),
+    runnerToken: required("FACTORY_RUNNER_TOKEN"),
     sync,
   });
 

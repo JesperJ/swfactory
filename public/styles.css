@@ -434,3 +434,30 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .nextwhy { grid-column: 2; font-size: 12.5px; color: var(--text-3); }
 .nextlist.blocked .nextrow { opacity: .72; }
 @media (min-width: 1100px) { .nextlist { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* The row and its action share one card, so an action is never visually orphaned between two.
+   A Failed pill floating between cards reads as belonging to the wrong row. */
+.nextlist li {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.nextlist li:hover { background: var(--surface-2); }
+.nextlist .nextrow { background: none; border: 0; border-radius: 0; }
+.nextlist .nextrow:hover { background: none; }
+.rowaction {
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 0 14px 12px; margin-top: -4px;
+}
+.rowaction .btn { min-height: 44px; padding: 0 14px; font-size: 14px; }
+
+/* A failed job explains itself in visible text and offers the retry the store already allows.
+   The reason used to live in a title attribute, which does not exist on touch. */
+.jobfail { display: grid; gap: 8px; justify-items: end; }
+.jobfail-why {
+  margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-2); text-align: left;
+  width: 100%; overflow-wrap: anywhere;
+}
+.jobfail-why b { color: var(--needs); }
+.btn.retry { border-color: var(--needs); color: var(--needs); }
+.featurerow { display: grid; }
+.sheet-action { margin-bottom: 18px; display: flex; justify-content: flex-end; }

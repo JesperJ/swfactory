@@ -8,7 +8,7 @@ import { mergeHooks, EVENTS } from "../scripts/install-hooks.ts";
 const SPECS = join(import.meta.dirname, "..", "projects");
 
 function setup() {
-  const { app } = createApp({ specsDir: SPECS, store: new Store(":memory:"), password: "pw", hookToken: "tok" });
+  const { app } = createApp({ specsDir: SPECS, store: new Store(":memory:"), password: "pw", hookToken: "tok", runnerToken: "run" });
   return app;
 }
 
@@ -101,7 +101,7 @@ test("install-hooks merges idempotently and keeps unrelated hooks", () => {
 
 test("a repeated idle nudge neither revives a dismissed session nor resets its clock", async () => {
   const store = new Store(":memory:");
-  const { app } = createApp({ specsDir: SPECS, store, password: "pw", hookToken: "tok" });
+  const { app } = createApp({ specsDir: SPECS, store, password: "pw", hookToken: "tok", runnerToken: "run" });
   const cookie = await login(app);
   const idle = {
     session_id: "s9",
@@ -129,4 +129,72 @@ test("a repeated idle nudge neither revives a dismissed session nor resets its c
   await hook(app, { session_id: "s9", hook_event_name: "UserPromptSubmit", prompt: "carry on" });
   assert.equal(store.get("s9")!.dismissed, 0);
   assert.notEqual(store.get("s9")!.status_since, first.status_since);
+});
+
+function runner(app: ReturnType<typeof setup>, path: string, init: RequestInit = {}) {
+  return app.request(path, {
+    ...init,
+    headers: { authorization: "Bearer run", "content-type": "application/json", ...(init.headers ?? {}) },
+  });
+}
+
+test("queueing a job needs the UI cookie, and the command must be one of the allowed three", async () => {
+  const app = setup();
+  const cookie = await login(app);
+  const post = (body: object, headers: Record<string, string> = { cookie }) =>
+    app.request("/api/jobs", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", ...headers } });
+
+  assert.equal((await post({ project: "swfactory", command: "build" }, {})).status, 401, "no cookie, no job");
+
+  const ok = await post({ project: "swfactory", feature: "005-start-session", command: "build" });
+  assert.equal(ok.status, 201);
+  assert.equal((await ok.json()).job.command, "build");
+
+  for (const command of ["approve", "rm -rf /", "", "BUILD", 7, null]) {
+    const res = await post({ project: "swfactory", feature: "008-what-next", command });
+    assert.equal(res.status, 400, `command ${String(command)} must be refused`);
+  }
+  // A job can only ever name work that exists.
+  assert.equal((await post({ project: "nope", command: "build" })).status, 404);
+  assert.equal((await post({ project: "swfactory", feature: "999-ghost", command: "build" })).status, 404);
+});
+
+test("the hook token cannot claim jobs, and the runner token cannot queue them", async () => {
+  const app = setup();
+  const asHook = await app.request("/api/jobs/next", { headers: { authorization: "Bearer tok" } });
+  assert.equal(asHook.status, 401, "a leaked hook token must not reach the runner endpoints");
+
+  const asRunner = await runner(app, "/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ project: "swfactory", command: "build" }),
+  });
+  assert.equal(asRunner.status, 401, "the runner token is not a login");
+});
+
+test("a job is claimed once, then reports its outcome", async () => {
+  const app = setup();
+  const cookie = await login(app);
+  await app.request("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ project: "swfactory", feature: "005-start-session", command: "build" }),
+    headers: { cookie, "content-type": "application/json" },
+  });
+
+  const claimed = (await (await runner(app, "/api/jobs/next")).json()).job;
+  assert.equal(claimed.status, "claimed");
+  assert.equal((await (await runner(app, "/api/jobs/next")).json()).job, null, "claimed only once");
+
+  const bad = await runner(app, `/api/jobs/${claimed.id}/status`, { method: "POST", body: JSON.stringify({ status: "exploded" }) });
+  assert.equal(bad.status, 400);
+  assert.equal((await runner(app, "/api/jobs/9999/status", { method: "POST", body: JSON.stringify({ status: "done" }) })).status, 404);
+
+  const failed = await runner(app, `/api/jobs/${claimed.id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status: "failed", error: "no checkout matching github.com/jesperj/swfactory" }),
+  });
+  assert.equal((await failed.json()).job.status, "failed");
+
+  const state = await (await app.request("/api/state", { headers: { cookie } })).json();
+  assert.equal(state.jobs.length, 1, "a failed job stays visible on the dashboard");
+  assert.match(state.jobs[0].error, /no checkout matching/);
 });
