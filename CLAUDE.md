@@ -9,21 +9,25 @@ This repo is two things:
 
 ## The workflow
 
-Features move `idea → specced → planned → building → done`, recorded in the frontmatter `status:`.
-Use the slash commands; each one moves a feature one step and stops for the user to approve:
+Features move `idea → specced → planned → building → reviewing → done`, recorded in the
+frontmatter `status:`. One command runs the line:
 
 | Command | Does | Leaves the feature |
 | --- | --- | --- |
-| `/new-project` | interviews, writes project.md | |
-| `/new-feature` | writes why/what/acceptance criteria | `specced` |
-| `/plan` | writes plan + tasks from the code | `planned` |
-| `/build` | implements task by task on `feature/<NNN>-<slug>` | `building`, then `done` |
-| `/status` | overview of everything | |
+| `/factory next` | does the top thing the dashboard recommends | |
+| `/factory project` | interviews, writes project.md | |
+| `/factory spec` | drafts why/what/acceptance criteria | `specced` |
+| `/factory plan` | writes plan + tasks from the code | `planned` |
+| `/factory build` | implements task by task on `feature/<NNN>-<slug>` | `reviewing` |
+| `/factory review` | three reviewers in parallel, findings to `reviews/` | `reviewing` |
+| `/factory approve` | passes, reworks, or escalates one question | `done` or `building` |
+| `/factory rework` | sends back with a note | `building` |
+| `/factory status` | overview, and proposes a diff for stale specs | |
 
 Rules:
-- No code without a spec the user approved. No `/build` without a plan.
+- No code without a spec. No build without a plan. Only `approve` may set `done`.
 - If the plan turns out wrong, update the spec first, then the code.
-- Keep the spec's Tasks and Log current; they are what the dashboard and `/status` show.
+- Keep the spec's Tasks and Log current; they are what the dashboard and `/factory status` show.
 - Frontmatter is machine-read: keep `status`, `title`, `priority`, `summary`, `repo` valid YAML.
 
 ## Finding the specs

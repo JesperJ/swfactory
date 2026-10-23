@@ -9,7 +9,7 @@ import { join } from "node:path";
 import matter from "gray-matter";
 import { marked } from "marked";
 
-export const FEATURE_STATUSES = ["idea", "specced", "planned", "building", "done"] as const;
+export const FEATURE_STATUSES = ["idea", "specced", "planned", "building", "reviewing", "done"] as const;
 
 export interface Feature {
   id: string; // "003"

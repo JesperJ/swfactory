@@ -137,3 +137,17 @@ test("a finished session with no feature is left to the Inbox", () => {
   const s = session({ id: "s1", status: "your_turn", project: "shop" });
   assert.deepEqual(rankNext([project("shop", [])], [s], NOW), []);
 });
+
+test("review work outranks starting anything new", () => {
+  const projects = [
+    project("shop", [
+      feature({ slug: "001-review", status: "reviewing", priority: "P3" }),
+      feature({ slug: "002-ready", status: "planned", priority: "P1" }),
+      feature({ slug: "003-going", status: "building", priority: "P1", lastLog: daysAgo(1) }),
+    ]),
+  ];
+  const ranked = rankNext(projects, [], NOW);
+  assert.equal(ranked[0].feature, "001-review", "finishing beats widening the work");
+  assert.equal(ranked[0].action, "Review");
+  assert.equal(ranked[0].reason, "built, waiting on review");
+});

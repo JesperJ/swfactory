@@ -23,6 +23,7 @@
   --st-specced: #8b6ad8;
   --st-planned: #3b8fd9;
   --st-building: #e08a1e;
+  --st-reviewing: #0f9bb0;
   --st-done: #1f9d6b;
 
   --radius: 14px;
@@ -304,6 +305,7 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .st-specced { background: var(--st-specced); }
 .st-planned { background: var(--st-planned); }
 .st-building { background: var(--st-building); }
+.st-reviewing { background: var(--st-reviewing); }
 .st-done { background: var(--st-done); }
 .st-other { background: var(--text-3); }
 
@@ -400,6 +402,7 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 }
 .hero.k-answer { border-left-color: var(--needs); }
 .hero.k-review { border-left-color: var(--turn); }
+.hero.k-approve { border-left-color: var(--st-reviewing); }
 .hero.k-unstick { border-left-color: var(--st-building); }
 .hero.k-build { border-left-color: var(--st-planned); }
 .hero.k-plan { border-left-color: var(--st-specced); }
@@ -421,6 +424,7 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .nextrow .dot { width: 9px; height: 9px; border-radius: 50%; grid-row: 1; align-self: center; }
 .nextrow .dot.k-answer { background: var(--needs); }
 .nextrow .dot.k-review { background: var(--turn); }
+.nextrow .dot.k-approve { background: var(--st-reviewing); }
 .nextrow .dot.k-unstick { background: var(--st-building); }
 .nextrow .dot.k-build { background: var(--st-planned); }
 .nextrow .dot.k-plan { background: var(--st-specced); }
