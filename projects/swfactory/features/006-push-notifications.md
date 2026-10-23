@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: building
+status: reviewing
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -160,3 +160,4 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   session on a real status change, so a dismissed session that genuinely blocks again later will
   notify. That is the inbox's existing semantics and reads as correct — it is a new thing
   needing you — but it is the one place the "dismissed produces nothing" rule bends.
+- 2026-10-23 Ready for review: https://github.com/JesperJ/swfactory/pull/5
