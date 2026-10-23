@@ -1,6 +1,6 @@
 ---
 title: Next as a table, and the lifecycle made visible
-status: planned
+status: building
 priority: P1
 summary: Next becomes a scannable table, and Projects gains a lifecycle strip showing the stages and where work sits.
 ---
@@ -198,3 +198,4 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   Also stepped away from "inline SVG" for the strip: text in SVG does not reflow or select, and
   the criterion's real intent — theme-aware, fits a phone, live numbers — is better served by
   HTML and CSS with the arrow as the only SVG. That criterion is reworded, not dropped. 8 tasks.
+- 2026-10-23 Build started on `feature/012-next-table` in the live checkout.
