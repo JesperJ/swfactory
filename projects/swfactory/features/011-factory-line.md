@@ -71,10 +71,10 @@ not to remove the last decision. Merging stays mine, with the findings already a
 - [x] `/factory <sub>` replaces the five loose commands; the old names stop existing
 - [ ] `/factory next` acts on the dashboard's top recommendation without being told which it is
 - [x] `reviewing` is a real status: parsed, ranked, and coloured in the dashboard
-- [ ] `/factory build` leaves a feature at `reviewing`, never at `done`
-- [ ] Reviewers run in parallel and write findings to a per-round file, kept in git
-- [ ] Each finding names the acceptance criterion or file it concerns, not a general opinion
-- [ ] The approver passes, reworks, or escalates, and records which and why in the spec's Log
+- [x] `/factory build` leaves a feature at `reviewing`, never at `done`
+- [x] Reviewers run in parallel and write findings to a per-round file, kept in git
+- [x] Each finding names the acceptance criterion or file it concerns, not a general opinion
+- [x] The approver passes, reworks, or escalates, and records which and why in the spec's Log
 - [ ] Rework is capped at two rounds, then escalates
 - [ ] An escalation reaches me as one specific question, never as a list of findings
 - [x] Nothing merges to main automatically
@@ -193,3 +193,11 @@ the thing that actually drifted.
   sub-commands already had, plus a check that the round file is not older than the build.
   Three dashboard empty states now name the commands that exist; a repo-wide sweep found no
   others. 23 tests, typecheck clean, `npm run shoot` clean. Ready for round 2.
+- 2026-10-23 Four criteria ticked on the evidence of round 1 itself, not on assertion: three
+  reviewers ran in one message and `reviews/011-round-1.md` is committed; every finding cites a
+  file and line; the approver reworked and logged why; `build` left the feature at `reviewing`
+  twice and never touched `done`.
+  The remaining four — `next` acting on the top item, the two-round cap, an escalation arriving
+  as one question, and `status` proposing a diff — are runtime behaviour that no review round
+  can settle. They close by use. Staying at `reviewing` until then rather than buying a second
+  round that could only re-read the same prompt text.
