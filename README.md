@@ -116,3 +116,27 @@ FACTORY_URL=http://localhost:8088 nix shell nixpkgs#chromium --command npm run s
 Screenshots phone and desktop widths into `/tmp/factory-shots` and fails on console errors,
 horizontal overflow, or a wrapped tab bar. Uses the system Chromium, so there is no browser
 download; set `CHROMIUM_PATH` if it isn't on `PATH`.
+
+## Starting work from the dashboard
+
+The dashboard never executes anything. Tapping **Build** on a feature writes a job row; a small
+runner on your machine polls for it and starts a real Claude session in that repo, inside tmux.
+Every connection goes outward from the host — nothing listens, and the container holds no host
+credentials.
+
+```sh
+# a third secret, separate from the hook token
+openssl rand -hex 24   # -> FACTORY_RUNNER_TOKEN, add it to .env and restart the dashboard
+
+cp contrib/factory-runner.service ~/.config/systemd/user/
+printf 'FACTORY_RUNNER_TOKEN=%s\n' "$TOKEN" > ~/.config/factory-runner.env
+chmod 600 ~/.config/factory-runner.env
+systemctl --user daemon-reload && systemctl --user enable --now factory-runner
+```
+
+A job carries a project, a feature and one of three commands (`plan`, `build`, `spec`) — never a
+shell string. The runner rebuilds the command itself and finds the checkout by matching its git
+remote to the project's `repo:`, so a renamed or wrong directory fails with a visible reason
+instead of running somewhere unintended.
+
+Attach to a started session with `tmux attach -t factory-<project>-<feature>`.

@@ -24,7 +24,7 @@ const TABS = [
   { id: "sessions", label: "Sessions", icon: icons.sessions },
 ];
 
-let state = { projects: [], sessions: [], next: [], now: new Date().toISOString() };
+let state = { projects: [], sessions: [], jobs: [], next: [], now: new Date().toISOString() };
 let featureFilter = "all";
 const expandedDone = new Set();
 
@@ -150,6 +150,31 @@ function empty(title, body) {
   return `<div class="empty">${icons.check}<h3>${title}</h3><p>${body}</p></div>`;
 }
 
+// Which factory command each kind maps to. Same mapping /factory next uses, so the dashboard
+// and the command agree about what "Build" means. Session kinds are absent on purpose: no
+// command can answer a session for you.
+const KIND_COMMAND = { approve: "build", unstick: "build", build: "build", plan: "plan", spec: "spec" };
+
+function jobFor(projectSlug, featureSlug) {
+  return (state.jobs ?? []).find((j) => j.project === projectSlug && j.feature === featureSlug);
+}
+
+const JOB_LABEL = { queued: "Queued", claimed: "Starting", running: "Started", failed: "Failed", done: "Done" };
+
+// The button that queues work, or the state of the job already queued for it.
+function startControl(item, { primary = false } = {}) {
+  const command = KIND_COMMAND[item.kind];
+  if (!command || !item.feature || item.blocked) return "";
+  const job = jobFor(item.projectSlug, item.feature);
+  if (job && job.status !== "done") {
+    const label = JOB_LABEL[job.status] ?? job.status;
+    return job.status === "failed"
+      ? `<span class="pill needs_you" title="${esc(job.error ?? "")}">${label}</span>`
+      : `<span class="pill working">${label}</span>`;
+  }
+  return `<button class="btn ${primary ? "primary" : ""}" data-start="${esc(item.projectSlug)}/${esc(item.feature)}/${esc(command)}">${esc(item.action)} it</button>`;
+}
+
 // One recommendation, a few alternatives. Everything here is a thing you could start now.
 function renderNext() {
   const items = state.next ?? [];
@@ -168,7 +193,8 @@ function renderNext() {
         <p class="hero-why">${esc(top.reason)}</p>
         <div class="actions">
           ${top.url ? `<a class="btn primary" href="${esc(top.url)}" target="_blank" rel="noopener" data-seen="${esc(top.sessionId)}">Open session ${icons.open}</a>` : ""}
-          ${link(top) ? `<a class="btn ${top.url ? "" : "primary"}" href="${link(top)}">Open spec</a>` : ""}
+          ${startControl(top, { primary: !top.url })}
+          ${link(top) ? `<a class="btn" href="${link(top)}">Open spec</a>` : ""}
           ${!top.url && !link(top) ? `<a class="btn primary" href="#/inbox">See in inbox</a>` : ""}
         </div>
       </article>`
@@ -179,7 +205,7 @@ function renderNext() {
       <span class="dot k-${esc(i.kind)}"></span>
       <span class="nextmain"><b>${esc(i.action)}</b> ${esc(i.title)}</span>
       <span class="nextwhy">${esc(i.project)} · ${esc(i.reason)}</span>
-    </a></li>`;
+    </a>${startControl(i) ? `<div class="rowaction">${startControl(i)}</div>` : ""}</li>`;
 
   const alts = rest.slice(0, 4);
   return `${hero}
@@ -453,6 +479,23 @@ function connect() {
 document.addEventListener("click", async (e) => {
   // Opening a session is acting on it, so the notification clears itself. Any later status
   // change on that session brings it back; a repeated idle nudge does not.
+  const start = e.target.closest("[data-start]");
+  if (start) {
+    const [project, feature, command] = start.dataset.start.split("/");
+    start.disabled = true;
+    start.textContent = "Starting…";
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project, feature, command }),
+    });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: "could not queue" }));
+      start.textContent = esc(error ?? "failed");
+    }
+    load();
+    return;
+  }
   const seen = e.target.closest("[data-seen]");
   if (seen) {
     fetch(`/api/sessions/${encodeURIComponent(seen.dataset.seen)}/dismiss`, { method: "POST" }).then(load);

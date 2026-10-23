@@ -43,18 +43,18 @@ starting it. Inside tmux it can be attached from any terminal, and it gives 009 
 answer for "open this session".
 
 ## Acceptance criteria
-- [ ] Next's recommendation and each feature expose a button matching the action named
+- [x] Next's recommendation and each feature expose a button matching the action named
 - [ ] Tapping it starts a Claude session in that project's repo running the right command
 - [ ] The started session appears in the dashboard within 30s through the normal hook path
-- [ ] The dashboard container cannot execute anything on the host; the runner only pulls
-- [ ] A job names a project, a feature and one of an allowed set of commands — never free text
+- [x] The dashboard container cannot execute anything on the host; the runner only pulls
+- [x] A job names a project, a feature and one of an allowed set of commands — never free text
       and never a shell string
-- [ ] A job for a project with no `repo:`, or a repo missing on disk, fails with a visible
+- [x] A job for a project with no `repo:`, or a repo missing on disk, fails with a visible
       reason rather than silently
-- [ ] Two taps don't start two sessions for the same feature
+- [x] Two taps don't start two sessions for the same feature
 - [ ] A session started this way runs in tmux and can be attached
 - [ ] The runner survives a reboot and recovers cleanly if the dashboard is down
-- [ ] Jobs are visible: queued, running, failed, each with its reason
+- [x] Jobs are visible: queued, running, failed, each with its reason
 
 ## Out of scope
 - Replying into a running session from the dashboard (separate, and harder).
@@ -68,6 +68,11 @@ answer for "open this session".
   needs their git credentials and `~/.claude`.
 - Assumed jobs are claimed by a single runner. Multiple machines would need the job to name a
   host, which is easy to add later but pointless now.
+- **A started session inherits whatever state the checkout is in** — possibly a dirty tree on
+  an unrelated branch, possibly the branch another session is working on. The runner does not
+  check, and `build` would then commit onto it. Not hit yet because nothing has been started
+  into a live checkout; the honest fix is probably a worktree per job rather than the shared
+  checkout. This is why the launch path was tested against a throwaway repo rather than this one.
 - Permission mode for a started session is undecided. Fully interactive means it waits for a
   human in tmux; a narrow allowlist means it gets further alone. Start interactive, since a
   stuck visible session is better than a surprising one.
@@ -120,10 +125,10 @@ more here than the few seconds of latency it costs.
 - [x] `POST /api/jobs` with the command enum validated server-side, plus a test for rejection
 - [x] `GET /api/jobs/next` and `POST /api/jobs/:id/status` behind the runner token, plus tests
 - [x] Expose queued jobs in `/api/state` so the UI can show them
-- [ ] Buttons on the Next hero, Next rows and the feature sheet, mapping `kind` to a command
-- [ ] `scripts/runner.ts`: poll, resolve the checkout by git remote, launch tmux, report back
-- [ ] A `failed` job shows its reason on the dashboard rather than disappearing
-- [ ] systemd user unit file and the README section to install it
+- [x] Buttons on the Next hero, Next rows and the feature sheet, mapping `kind` to a command
+- [x] `scripts/runner.ts`: poll, resolve the checkout by git remote, launch tmux, report back
+- [x] A `failed` job shows its reason on the dashboard rather than disappearing
+- [x] systemd user unit file and the README section to install it
 - [ ] Dogfood: queue a job from the phone and watch the session appear in the Inbox
 
 ## Risks
@@ -141,3 +146,13 @@ more here than the few seconds of latency it costs.
   A third token, `FACTORY_RUNNER_TOKEN`, keeps the comparatively exposed hook token from being
   able to make the host run anything. 10 tasks.
 - 2026-10-23 Build started on `feature/005-start-session`.
+- 2026-10-23 Built. Job store, API with the runner token split out, buttons, runner and systemd
+  unit. 42 tests.
+  Verified live, not just by test: a job queued through the API, a second tap returning the same
+  job rather than a new one, a forbidden command rejected with 400, the checkout resolved by git
+  remote across ~40 real repos, and a tmux session launched in the right directory running
+  exactly `/factory build demo/001-a`. The launch was exercised against a throwaway repo with a
+  stubbed `claude`, deliberately — see the open question below.
+  Caught while looking at the result: the `/api/*` middleware would have locked the runner out
+  of its own endpoints, and the row action rendered between cards so a `Failed` pill read as
+  belonging to the wrong row. Both fixed.

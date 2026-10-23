@@ -1,0 +1,31 @@
+# Starts Claude sessions for jobs queued on the dashboard.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp contrib/factory-runner.service ~/.config/systemd/user/
+#   # edit the paths and Environment= lines below to match your setup
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now factory-runner
+#   journalctl --user -u factory-runner -f
+#
+# This service holds your git credentials and ~/.claude and starts real sessions, so run it as
+# your own user and never as root. It only ever polls outward; nothing listens on the host.
+
+[Unit]
+Description=Software factory job runner
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/repos/swfactory
+Environment=FACTORY_URL=http://localhost:8088
+Environment=FACTORY_REPO_ROOT=%h/code/repos
+# The runner token, NOT the hook token. Keep it out of this file:
+#   systemctl --user edit factory-runner   ->   [Service] Environment=FACTORY_RUNNER_TOKEN=...
+# or point at a file only you can read:
+EnvironmentFile=-%h/.config/factory-runner.env
+ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning scripts/runner.ts
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
