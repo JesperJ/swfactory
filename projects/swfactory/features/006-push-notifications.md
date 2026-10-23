@@ -119,7 +119,7 @@ busy moment can still buzz repeatedly, and the spec's own "train me to ignore th
 applies. If that happens, the fix is a global rate limit, not a longer per-session cooldown.
 
 ## Tasks
-- [ ] `notificationFor` in `src/notify.ts`: the pure trigger rules, with tests covering every
+- [x] `notificationFor` in `src/notify.ts`: the pure trigger rules, with tests covering every
       criterion (needs_you only, no repeat on unchanged status, dismissed produces nothing,
       failed jobs, and no prompt text or path in the body)
 - [ ] The `Notifier` interface, the ntfy sender with its own timeout, and the no-op `fromEnv`
