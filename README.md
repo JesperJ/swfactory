@@ -151,7 +151,7 @@ Delivery is an outbound POST to [ntfy](https://ntfy.sh), so the dashboard needs 
 no certificate and no service worker. Web Push would need all three; see
 `projects/swfactory/decisions/2026-10-23-ntfy-over-web-push.md`.
 
-On the dashboard host:
+On the dashboard host, if you run it from this checkout:
 
 ```sh
 # The topic is the only thing protecting the channel, so make it unguessable.
@@ -160,15 +160,30 @@ printf 'FACTORY_PUBLIC_URL=%s\n' 'http://factory.local:3000' >> .env   # as your
 # restart the dashboard
 ```
 
+Deployed on Fly.io, where appending to `.env` does nothing at all:
+
+```sh
+fly secrets set \
+  NTFY_TOPIC="factory-$(openssl rand -hex 16)" \
+  FACTORY_PUBLIC_URL='https://<your app>.fly.dev'
+fly secrets list | grep NTFY_TOPIC   # confirm it took; the value is not shown
+```
+
+Set `NTFY_TOPIC` without `FACTORY_PUBLIC_URL` and the dashboard says so on startup — the
+notifications would arrive with nothing to tap.
+
 On the phone, once:
 
 1. Install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy),
    [iOS](https://apps.apple.com/app/ntfy/id1625396347)).
 2. **+** → paste the topic exactly as it is in `.env` (just the topic, not a URL) → Subscribe.
-3. Long-press the subscription → set its priority to Max, so a blocked session wakes the screen.
-4. Check it end to end: `/factory build` something from the dashboard and let it hit a
+3. Check it end to end: `/factory build` something from the dashboard and let it hit a
    permission prompt. The notification names the project, the feature and the host; tapping it
-   opens the inbox.
+   opens the inbox. Fail a job and the notification opens that feature, where the Retry button
+   is.
+
+Both notifications are sent at high priority, so they wake the screen on either platform
+without a per-subscription setting.
 
 A notification never carries prompt text, Claude's message, or a filesystem path — only project,
 feature, host and the link. An ntfy topic is a bearer secret in URL form: anyone who learns it

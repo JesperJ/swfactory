@@ -19,10 +19,13 @@ export interface Notification {
 
 export interface SessionEvent {
   kind: "session";
-  session: Pick<Session, "id" | "status" | "host" | "repo" | "dismissed">;
+  // A narrow projection, and the call site is expected to build it field by field rather than
+  // hand over the whole row: a `Pick` is a compile-time shape, so `prompt`, `message` and `cwd`
+  // would otherwise still be sitting on the object at runtime, one careless edit from the body.
+  session: Pick<Session, "id" | "status" | "host" | "repo" | "cwd" | "dismissed">;
   statusChanged: boolean;
-  // Resolved lazily, and only once the cheap rules have passed: matching a session to a feature
-  // means reading every spec, and the overwhelming majority of hooks are not worth that.
+  // Resolved lazily, and only once every cheap rule — including the cooldown — has passed:
+  // matching a session to a feature reads every spec off disk, and almost no hook sends.
   link: () => { project: string | null; feature: string | null };
 }
 
@@ -34,11 +37,13 @@ export interface JobEvent {
 
 export type FactoryEvent = SessionEvent | JobEvent;
 
-// Long enough to name the work, short enough that a phone shows all of it.
-const MAX_TEXT = 120;
+// A lock screen shows roughly 30-35 characters of a title before clipping, so what varies — the
+// feature — goes in the body, and this cap is a backstop against a hostile header rather than a
+// claim that everything below it is visible.
+const MAX_TEXT = 60;
 
-// Host and repo arrive from the X-Factory-* headers, so they are as trustworthy as whatever
-// ran the hook; and an ntfy title has to stay on one line either way.
+// Host, repo and cwd arrive from the X-Factory-* headers, so they are as trustworthy as
+// whatever ran the hook; and an ntfy title has to stay on one line either way.
 function clean(v: string | null | undefined): string | null {
   if (!v) return null;
   const s = v.replace(/\s+/g, " ").trim();
@@ -46,10 +51,11 @@ function clean(v: string | null | undefined): string | null {
   return s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT - 1)}…` : s;
 }
 
-// A repo is normally a remote URL, but it can be a local path, so only its last segment is
-// ever used. That names the thing without putting a filesystem path in the body.
-function repoLabel(repo: string | null | undefined): string | null {
-  const s = clean(repo);
+// A repo is normally a remote URL and a cwd is always a path, so only the last segment of
+// either is ever used. That names the thing without putting a path in the notification, and it
+// is the same reduction `sessionCard` does in the UI.
+function lastSegment(v: string | null | undefined): string | null {
+  const s = clean(v);
   if (!s) return null;
   const last = s
     .replace(/\.git$/i, "")
@@ -65,9 +71,29 @@ function trimmed(v: string | null | undefined): string | null {
   return s ? s : null;
 }
 
-function inboxUrl(baseUrl: string | null | undefined): string | undefined {
+function dashboardUrl(baseUrl: string | null | undefined, hash: string): string | undefined {
   const base = trimmed(baseUrl)?.replace(/\/+$/, "");
-  return base ? `${base}/#/inbox` : undefined;
+  return base ? `${base}/#/${hash}` : undefined;
+}
+
+// Joined with the title, never repeating it, and never empty.
+function body(what: string | null, where: string, tail: string | null, fallback: string): string {
+  const parts = [what === where ? null : what, tail].filter((p): p is string => !!p);
+  return parts.length ? parts.join(" · ") : fallback;
+}
+
+// The rules that need nothing but the session row. Split out so the cooldown can sit behind
+// them and in front of the specs read; `notificationFor` applies it too, so there is one copy.
+export function sessionWouldNotify(e: SessionEvent): boolean {
+  // Claude Code repeats idle notifications while a session waits. Those restate the status
+  // rather than reporting anything new, so they are not an event.
+  if (!e.statusChanged) return false;
+  if (e.session.status !== "needs_you") return false;
+  // `upsert` clears `dismissed` on a real status change, so in practice this never fires on the
+  // hook path — a dismissed session that genuinely blocks again is a new thing needing you, and
+  // notifies. The rule still belongs where the rules are.
+  if (e.session.dismissed) return false;
+  return true;
 }
 
 export function notificationFor(event: FactoryEvent, baseUrl?: string | null): Notification | null {
@@ -75,22 +101,17 @@ export function notificationFor(event: FactoryEvent, baseUrl?: string | null): N
 }
 
 function forSession(e: SessionEvent, baseUrl?: string | null): Notification | null {
-  // Claude Code repeats idle notifications while a session waits. Those restate the status
-  // rather than reporting anything new, so they are not an event.
-  if (!e.statusChanged) return null;
-  if (e.session.status !== "needs_you") return null;
-  // `upsert` clears `dismissed` on a real status change, so this is belt and braces — but the
-  // rule belongs where the rules are, not inferred from another module's behaviour.
-  if (e.session.dismissed) return null;
+  if (!sessionWouldNotify(e)) return null;
 
   const { project, feature } = e.link();
-  const what = clean(feature) ?? repoLabel(e.session.repo) ?? "unknown work";
-  const where = clean(project);
-  const host = clean(e.session.host);
+  // Same fallback chain the dashboard's own session card uses, so a session outside a known
+  // project is named the same way in both places instead of reading "unknown work" here.
+  const label = lastSegment(e.session.repo) ?? lastSegment(e.session.cwd) ?? "unknown work";
+  const where = clean(project) ?? label;
   return {
-    title: `Needs you: ${where ? `${where} / ${what}` : what}`,
-    body: host ? `Claude is blocked on you · ${host}` : "Claude is blocked on you",
-    click: inboxUrl(baseUrl),
+    title: `Needs you: ${where}`,
+    body: body(clean(feature) ?? label, where, clean(e.session.host), "Claude is blocked on you"),
+    click: dashboardUrl(baseUrl, "inbox"),
   };
 }
 
@@ -100,11 +121,15 @@ function forJob(e: JobEvent, baseUrl?: string | null): Notification | null {
   if (e.previousStatus === "failed") return null;
   const project = clean(e.job.project) ?? "unknown project";
   const feature = clean(e.job.feature);
+  // Not the Inbox: it renders sessions, never jobs, so a tap would land on "All quiet" seconds
+  // after this said something failed. The doc sheet shows the failed job and its retry button.
+  const enc = encodeURIComponent;
+  const hash = e.job.feature ? `next/doc/${enc(e.job.project)}/${enc(e.job.feature)}` : "next";
   // The job's `error` is deliberately left out: it is runner output and can carry paths.
   return {
-    title: `Job failed: ${feature ? `${project} / ${feature}` : project}`,
-    body: `/factory ${e.job.command} did not finish`,
-    click: inboxUrl(baseUrl),
+    title: `Job failed: ${project}`,
+    body: body(feature, project, `/factory ${e.job.command}`, `/factory ${e.job.command}`),
+    click: dashboardUrl(baseUrl, hash),
   };
 }
 
@@ -119,6 +144,7 @@ export interface Sender {
 
 const NTFY_SERVER = "https://ntfy.sh";
 const NTFY_TIMEOUT_MS = 5_000;
+const NTFY_PRIORITY = 4;
 
 // ntfy's JSON publish endpoint rather than its header-per-field form: a project or host name
 // with a non-ASCII character in it would need RFC 2047 encoding in a header, and needs nothing
@@ -142,11 +168,18 @@ export function ntfySender(cfg: {
           title: n.title,
           message: n.body,
           ...(n.click ? { click: n.click } : {}),
+          // High, for both triggers: each one means go and look now. Sent in the body rather
+          // than left to a per-subscription setting, which only the Android app has.
+          priority: NTFY_PRIORITY,
         }),
         // The sender carries its own deadline. Nothing upstream is waiting on it, but a socket
         // that never closes would otherwise leak one handle per notification.
         signal: AbortSignal.timeout(timeoutMs),
       });
+      // Released rather than left to the deadline or the GC: an unconsumed body pins the
+      // keep-alive socket, which is the leak the timeout above was reasoned about but does not
+      // promptly close.
+      await res.body?.cancel().catch(() => {});
       if (!res.ok) throw new Error(`ntfy responded ${res.status}`);
     },
   };
@@ -198,30 +231,56 @@ export class Notifier {
     return this.sender !== null;
   }
 
-  // Fire and forget: returns nothing a request path could await, and never throws. A push to a
-  // third party must not be able to slow down, fail, or change the response of an endpoint.
+  // Fire and forget: returns immediately, and never throws. Round 1 found this was only half
+  // true — everything below is synchronous up to the `send()` call, and the link thunk reads
+  // every spec off disk, so it was blocking the event loop before the handler could respond.
+  // `setImmediate`, not `queueMicrotask`: a microtask would still run before the response is
+  // written. Nothing upstream can observe any of it, which is the point.
   maybeSend(event: FactoryEvent): void {
     if (!this.sender) return;
+    setImmediate(() => this.deliver(event));
+  }
+
+  private deliver(event: FactoryEvent): void {
+    const sender = this.sender;
+    if (!sender) return;
     try {
+      if (event.kind === "session") {
+        // Both gates run before `notificationFor`, because that is what reads the specs. A
+        // session that flaps needs_you → working → needs_you is the same stuck session, not a
+        // second thing to know about, and it should not pay for a spec read it will discard.
+        // Jobs are not cooled: `failed` is terminal so there is only ever one per job, and two
+        // jobs failing at once are two things to know about.
+        if (!sessionWouldNotify(event)) return;
+        if (this.cooling(event.session.id)) return;
+      }
       const n = notificationFor(event, this.baseUrl);
       if (!n) return;
-      // A session that flaps needs_you → working → needs_you is the same stuck session, not a
-      // second thing to know about. Jobs are not cooled: `failed` is terminal so there is only
-      // ever one per job, and two jobs failing at once are two things to know about.
-      if (event.kind === "session" && this.cooling(event.session.id)) return;
-      void this.sender
+      void sender
         .send(n)
         .catch((err: unknown) => this.log(`[notify] send failed: ${(err as Error).message}`));
     } catch (err) {
+      // Reached only from a detached callback now, where an escaping throw would take the
+      // process down rather than merely fail a request.
       this.log(`[notify] failed: ${(err as Error).message}`);
     }
   }
 }
 
-export function fromEnv(env: Record<string, string | undefined> = process.env): Notifier {
+export function fromEnv(
+  env: Record<string, string | undefined> = process.env,
+  log: (msg: string) => void = (msg) => console.error(msg),
+): Notifier {
   const topic = trimmed(env.NTFY_TOPIC);
+  const baseUrl = trimmed(env.FACTORY_PUBLIC_URL);
+  // The two are independent env vars and both optional, so half-configured is easy to reach and
+  // invisible from the phone: the notification arrives and tapping it does nothing. Say so once
+  // at startup rather than sending dead notifications in silence.
+  if (topic && !baseUrl)
+    log("[notify] NTFY_TOPIC is set but FACTORY_PUBLIC_URL is not; notifications will not be tappable.");
   return new Notifier({
     sender: topic ? ntfySender({ topic, server: env.NTFY_SERVER }) : null,
-    baseUrl: env.FACTORY_PUBLIC_URL,
+    baseUrl,
+    log,
   });
 }

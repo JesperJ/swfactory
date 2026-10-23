@@ -203,19 +203,25 @@ test("a job is claimed once, then reports its outcome", async () => {
 // --- notifications ----------------------------------------------------------
 // The rules themselves live in notify.test.ts. These cover the wiring: that the endpoints feed
 // the notifier the right event, and that a broken notifier cannot affect a response.
+//
+// Delivery is deferred off the request path, so asserting what was sent means letting one turn
+// of the event loop pass after the response comes back.
 
-function withNotifier() {
+const flush = () => new Promise((r) => setImmediate(r));
+
+function withNotifier(opts: { now?: () => number } = {}) {
   const sent: Notification[] = [];
+  const store = new Store(":memory:");
   const sender: Sender = { async send(n) { sent.push(n); } };
   const { app } = createApp({
     specsDir: SPECS,
-    store: new Store(":memory:"),
+    store,
     password: "pw",
     hookToken: "tok",
     runnerToken: "run",
-    notifier: new Notifier({ sender, baseUrl: "http://factory.local:3000" }),
+    notifier: new Notifier({ sender, baseUrl: "http://factory.local:3000", ...opts }),
   });
-  return { app, sent };
+  return { app, sent, store };
 }
 
 test("a session blocking on a permission prompt notifies once, naming the feature", async () => {
@@ -227,13 +233,14 @@ test("a session blocking on a permission prompt notifies once, naming the featur
   };
   const base = { session_id: "s1", cwd: "/work/swfactory" };
   await hook(app, { ...base, hook_event_name: "UserPromptSubmit", prompt: "do the thing" }, headers);
+  await flush();
   assert.equal(sent.length, 0, "working must not notify");
 
   await hook(app, { ...base, hook_event_name: "Notification", message: "Claude needs your permission to run rm" }, headers);
+  await flush();
   assert.equal(sent.length, 1);
-  assert.match(sent[0].title, /swfactory/);
-  assert.match(sent[0].title, /002-session-hooks/);
-  assert.match(sent[0].body, /thinkpad/);
+  assert.equal(sent[0].title, "Needs you: swfactory");
+  assert.equal(sent[0].body, "002-session-hooks · thinkpad");
   assert.equal(sent[0].click, "http://factory.local:3000/#/inbox");
 
   // The one thing an ntfy topic holder must never see.
@@ -244,6 +251,7 @@ test("a session blocking on a permission prompt notifies once, naming the featur
 
   // Claude Code repeats the idle nudge while a session waits; it restates needs_you.
   await hook(app, { ...base, hook_event_name: "Notification", message: "Claude needs your permission to run rm" }, headers);
+  await flush();
   assert.equal(sent.length, 1, "a repeated event that changes nothing is not a second event");
 });
 
@@ -252,20 +260,36 @@ test("Stop and SessionEnd notify nothing", async () => {
   const base = { session_id: "s2", cwd: "/work/swfactory" };
   await hook(app, { ...base, hook_event_name: "Stop", last_assistant_message: "done" });
   await hook(app, { ...base, hook_event_name: "SessionEnd" });
+  await flush();
   assert.equal(sent.length, 0);
 });
 
-test("a job reported failed notifies, naming the project, feature and command", async () => {
-  const store = new Store(":memory:");
-  const sent: Notification[] = [];
-  const { app } = createApp({
-    specsDir: SPECS,
-    store,
-    password: "pw",
-    hookToken: "tok",
-    runnerToken: "run",
-    notifier: new Notifier({ sender: { async send(n) { sent.push(n); } } }),
-  });
+test("a dismissed session that genuinely blocks again does notify", async () => {
+  // Round 1 found the dismissed rule was only covered by a hand-built state the store cannot
+  // produce. This is the real sequence. `upsert` un-dismisses on a real status change — it is a
+  // new thing needing you — so the notification is correct, and this records that it is meant.
+  const clock = { t: 0 };
+  const { app, sent } = withNotifier({ now: () => clock.t });
+  const base = { session_id: "s3", cwd: "/work/swfactory" };
+  const headers = { "x-factory-repo": "https://github.com/JesperJ/swfactory", "x-factory-host": "thinkpad" };
+
+  await hook(app, { ...base, hook_event_name: "Notification", message: "blocked" }, headers);
+  await flush();
+  assert.equal(sent.length, 1);
+
+  assert.equal((await app.request(`/api/sessions/s3/dismiss`, { method: "POST", headers: { cookie: await login(app) } })).status, 200);
+  await hook(app, { ...base, hook_event_name: "UserPromptSubmit", prompt: "carry on" }, headers);
+  await flush();
+  assert.equal(sent.length, 1, "going back to work is not an event");
+
+  clock.t += 11 * 60_000; // past the cooldown, so this tests the dismissed rule and not it
+  await hook(app, { ...base, hook_event_name: "Notification", message: "blocked again" }, headers);
+  await flush();
+  assert.equal(sent.length, 2, "blocking again after a dismiss is a new thing needing you");
+});
+
+test("a job reported failed notifies, and links to the doc sheet rather than the inbox", async () => {
+  const { app, sent, store } = withNotifier();
   const { job } = store.enqueue({ project: "swfactory", feature: "006-push-notifications", command: "build" });
 
   const report = (status: string) =>
@@ -276,13 +300,20 @@ test("a job reported failed notifies, naming the project, feature and command", 
     });
 
   assert.equal((await report("running")).status, 200);
+  await flush();
   assert.equal(sent.length, 0, "running is not a failure");
+
   assert.equal((await report("failed")).status, 200);
+  await flush();
   assert.equal(sent.length, 1);
-  assert.match(sent[0].title, /swfactory/);
-  assert.match(sent[0].title, /006-push-notifications/);
-  assert.match(sent[0].body, /build/);
+  assert.equal(sent[0].title, "Job failed: swfactory");
+  assert.equal(sent[0].body, "006-push-notifications · /factory build");
+  // The inbox renders sessions only, so a tap there would land on "All quiet" seconds after
+  // this said something failed. The doc sheet shows the failed job and its retry button.
+  assert.equal(sent[0].click, "http://factory.local:3000/#/next/doc/swfactory/006-push-notifications");
+
   assert.equal((await report("failed")).status, 200);
+  await flush();
   assert.equal(sent.length, 1, "re-reporting a status it already had is not a new failure");
 });
 
@@ -328,5 +359,6 @@ test("a notifier whose sender throws still leaves the endpoints at 200", async (
   });
   const res = await hook(app, { session_id: "s8", hook_event_name: "Notification", message: "blocked" });
   assert.equal(res.status, 200);
+  await flush();
   assert.match(logged.join(" "), /unreachable/, "the failure is logged, not raised");
 });

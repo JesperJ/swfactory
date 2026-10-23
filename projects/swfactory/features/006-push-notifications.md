@@ -138,25 +138,25 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
       (needs Jesper's phone; the dashboard-to-ntfy half is verified)
 
 ### Round 1 rework
-- [ ] **Blocking (UX 1).** A `Job failed` tap lands on the Inbox, which never renders jobs — he
+- [x] **Blocking (UX 1).** A `Job failed` tap lands on the Inbox, which never renders jobs — he
       sees "All quiet" seconds after being told something failed. Click to
       `#/next/doc/<project>/<feature>`, which renders the failed job and its Retry button;
       fall back to `#/next` when there is no feature. Sessions keep `#/inbox`.
-- [ ] Take `maybeSend` off the request path for real (code 2, security 1): it is synchronous up
+- [x] Take `maybeSend` off the request path for real (code 2, security 1): it is synchronous up
       to `send()`, so `loadProjects()` runs inline in the hook handler. Defer it, and check the
       cooldown *before* `notificationFor` (security 2) so a flapping session stops paying for a
       spec read it discards.
-- [ ] Pass the notifier an explicit `{ id, status, host, repo, dismissed }` (security 4). A
+- [x] Pass the notifier an explicit `{ id, status, host, repo, dismissed }` (security 4). A
       `Pick` is structural: `prompt`, `message` and `cwd` are on the object at runtime today.
-- [ ] Drain the ntfy response body (code 4, security 5), and warn at startup when `NTFY_TOPIC`
+- [x] Drain the ntfy response body (code 4, security 5), and warn at startup when `NTFY_TOPIC`
       is set without `FACTORY_PUBLIC_URL` (code 3, UX 5) instead of sending unclickable
       notifications in silence.
-- [ ] Put the feature in the body, not the title (UX 3) — the title is what a lock screen clips,
+- [x] Put the feature in the body, not the title (UX 3) — the title is what a lock screen clips,
       and the feature is the part that varies. Send `priority` in the body so iOS gets it too,
       and fall back to the `cwd` basename before "unknown work" (UX 6).
-- [ ] README: `fly secrets set` lines for the deployed path (UX 4), where appending to `.env` is
+- [x] README: `fly secrets set` lines for the deployed path (UX 4), where appending to `.env` is
       silently inert. Drop the Android-only priority step once priority is sent in the body.
-- [ ] Test the real dismissed sequence (code 1): dismiss, `working`, `needs_you` — the current
+- [x] Test the real dismissed sequence (code 1): dismiss, `working`, `needs_you` — the current
       test builds a state the store cannot produce.
 
 ## Log
@@ -191,3 +191,13 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   already states about itself actually true — "not on the request path", "a property of the
   code", "would otherwise leak one handle". Three reviewers independently found the same
   synchronous `loadProjects()` in the hook handler.
+- 2026-10-23 Round 1 rework done: the blocking finding and all eleven minors. Jobs now link to
+  the doc sheet (`#/next/doc/<project>/<feature>`), which renders the failed job and its Retry
+  button, instead of the Inbox, which renders sessions only. `maybeSend` defers with
+  `setImmediate` and the cooldown gates ahead of the specs read, so the hook handler no longer
+  does disk I/O before responding — live hook responses went from 24ms to 3ms. The feature moved
+  from the title to the body, where a lock screen does not clip it; `priority: 4` is sent in the
+  message so iOS gets it without the Android-only per-subscription setting. Rechecked live
+  against real ntfy.sh: two messages, correct titles, bodies, priorities and click targets, with
+  `SECRET-PROMPT`, `SECRET-COMMAND` and `/home/jesper/SECRET/PATH` all planted and none present.
+  89 tests, typecheck clean.

@@ -55,7 +55,17 @@ export function createApp(cfg: Config) {
     // reads every spec, and almost no hook will send anything.
     notifier.maybeSend({
       kind: "session",
-      session,
+      // Built field by field, not handed the row: the notifier's parameter type is a `Pick`,
+      // which is a compile-time shape only, so passing `session` whole would leave `prompt`,
+      // `message` and `cwd`'s full path sitting on the object one careless edit from the body.
+      session: {
+        id: session.id,
+        status: session.status,
+        host: session.host,
+        repo: session.repo,
+        cwd: session.cwd,
+        dismissed: session.dismissed,
+      },
       statusChanged,
       link: () => linkSession(session, loadProjects(cfg.specsDir)),
     });
