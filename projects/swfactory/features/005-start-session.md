@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: reviewing
+status: building
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -43,7 +43,7 @@ starting it. Inside tmux it can be attached from any terminal, and it gives 009 
 answer for "open this session".
 
 ## Acceptance criteria
-- [x] Next's recommendation and each feature expose a button matching the action named
+- [ ] Next's recommendation and each feature expose a button matching the action named
 - [ ] Tapping it starts a Claude session in that project's repo running the right command
 - [ ] The started session appears in the dashboard within 30s through the normal hook path
 - [x] The dashboard container cannot execute anything on the host; the runner only pulls
@@ -54,7 +54,7 @@ answer for "open this session".
 - [x] Two taps don't start two sessions for the same feature
 - [ ] A session started this way runs in tmux and can be attached
 - [ ] The runner survives a reboot and recovers cleanly if the dashboard is down
-- [x] Jobs are visible: queued, running, failed, each with its reason
+- [ ] Jobs are visible: queued, running, failed, each with its reason
 
 ## Out of scope
 - Replying into a running session from the dashboard (separate, and harder).
@@ -130,6 +130,13 @@ more here than the few seconds of latency it costs.
 - [x] A `failed` job shows its reason on the dashboard rather than disappearing
 - [x] systemd user unit file and the README section to install it
 - [ ] Dogfood: queue a job from the phone and watch the session appear in the Inbox
+- [ ] Round 1: `KIND_COMMAND.approve` queues a build for a feature at `reviewing`; it must map to `review`
+- [ ] Round 1: allow `review` as a job command, or the hero button for a reviewing feature cannot work
+- [ ] Round 1: a failed job blocks retry for 24h although the store would accept one
+- [ ] Round 1: the failure reason lives only in a `title` attribute, invisible on touch
+- [ ] Round 1: no start control outside the Next hero and its first four rows — add to the feature sheet and the project feature rows
+- [ ] Round 1 (minor): row buttons are 36px, below the 40px base and the 44px touch guideline
+- [ ] Round 1: cover `KIND_COMMAND` and `startControl` with tests — neither is tested
 
 ## Risks
 - This is the first thing in the factory that *executes* rather than describes. The allowed-set
@@ -159,3 +166,15 @@ more here than the few seconds of latency it costs.
 - 2026-10-23 PR #3. Three criteria stay unticked — a session started into a live checkout, the
   30s hook round trip, and the runner surviving a reboot — because none has been exercised, and
   the first is held back by the checkout-state question above rather than by missing code.
+- 2026-10-23 Round 1 → rework. Five blocking findings in `reviews/005-round-1.md`, all clear
+  and local. Security found nothing, having verified the tmux argv claim empirically rather
+  than reading the comment that asserts it.
+  Two criteria were ticked falsely and are now un-ticked: "each feature exposes a button" —
+  true only in the Next tab, and only for its top five items — and "jobs are visible with their
+  reason" — the reason is in a `title` attribute, which does not exist on touch. Third round
+  running where ticking happened in the place the thing was built rather than everywhere the
+  criterion claims.
+  The worst finding is not a crash: tapping "Review it" on the hero queues a *build*, because
+  `KIND_COMMAND` disagrees with the dispatch table in `factory.md`. It dead-ends on `build`'s
+  own status guard, so nothing is damaged — but it burns the job and hides the real
+  recommendation until the dead session ends.
