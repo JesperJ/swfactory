@@ -251,3 +251,12 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   overflow, tab bar on one row. The whole logged-out round trip verified in a real browser —
   tapping a job notification while signed out now lands on the feature with the sheet open.
 - 2026-10-23 Back to reviewing after the round 2 rework. PR #5 updated.
+- 2026-10-23 Escalated, not passed. Two acceptance criteria are unticked and cannot be ticked
+  from here: the README walkthrough followed on a clean phone, and a notification actually
+  arriving on it. Everything else is met — round 2 returned 0 blocking from all three
+  reviewers, and the rework after it closed every round 2 finding plus the three round 1 items
+  that had only been claimed done, each verified live against real ntfy.sh. Deliberately not
+  running a review round 3: the newest round file predates the last build, which normally means
+  review first, but a third round is itself an escalation trigger and round 3 would re-review
+  fixes that are already tested and verified while leaving the phone criteria exactly where
+  they are. The decision is whether to do the phone walkthrough or narrow the two criteria.
