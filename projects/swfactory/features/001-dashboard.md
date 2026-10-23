@@ -36,3 +36,7 @@ Plain ES module frontend, no build step.
 
 ## Log
 - 2026-10-23 First version.
+- 2026-10-23 Added `npm run shoot`: screenshots phone and desktop widths using the system
+  Chromium and fails on console errors, horizontal overflow or a wrapped tab bar. UI changes
+  are now self-verifiable instead of needing a phone check. Also fixed a dead end where the
+  top recommendation offered no action when it was an unlinked session.

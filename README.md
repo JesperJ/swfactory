@@ -101,3 +101,14 @@ npm run typecheck
 
 Node ≥ 22.18 runs the TypeScript directly; there is no build step. The frontend is plain ES
 modules and CSS in `public/`. See `CLAUDE.md` for conventions.
+
+## Checking the UI
+
+```sh
+set -a && . ./.env && set +a
+FACTORY_URL=http://localhost:8088 nix shell nixpkgs#chromium --command npm run shoot
+```
+
+Screenshots phone and desktop widths into `/tmp/factory-shots` and fails on console errors,
+horizontal overflow, or a wrapped tab bar. Uses the system Chromium, so there is no browser
+download; set `CHROMIUM_PATH` if it isn't on `PATH`.

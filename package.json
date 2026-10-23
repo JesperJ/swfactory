@@ -12,7 +12,8 @@
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.ts",
     "test": "node --disable-warning=ExperimentalWarning --test 'test/*.test.ts'",
     "typecheck": "tsc --noEmit",
-    "install-hooks": "node scripts/install-hooks.ts"
+    "install-hooks": "node scripts/install-hooks.ts",
+    "shoot": "node --disable-warning=ExperimentalWarning scripts/shoot.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "playwright": "^1.56.1",
     "typescript": "^7.0.2"
   }
 }

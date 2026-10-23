@@ -169,6 +169,7 @@ function renderNext() {
         <div class="actions">
           ${top.url ? `<a class="btn primary" href="${esc(top.url)}" target="_blank" rel="noopener" data-seen="${esc(top.sessionId)}">Open session ${icons.open}</a>` : ""}
           ${link(top) ? `<a class="btn ${top.url ? "" : "primary"}" href="${link(top)}">Open spec</a>` : ""}
+          ${!top.url && !link(top) ? `<a class="btn primary" href="#/inbox">See in inbox</a>` : ""}
         </div>
       </article>`
     : "";
