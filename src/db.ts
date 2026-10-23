@@ -42,6 +42,33 @@ export interface SessionUpdate {
   message?: string | null;
 }
 
+// What a job may ask for. The runner rebuilds the command from this, so a job never carries a
+// shell string, a path, or anything else free-form. Adding to this list widens what a
+// compromised dashboard can cause to run on the host, so it is deliberately short.
+export const JOB_COMMANDS = ["plan", "build", "spec"] as const;
+export type JobCommand = (typeof JOB_COMMANDS)[number];
+
+// queued -> claimed -> running -> done | failed
+export type JobStatus = "queued" | "claimed" | "running" | "failed" | "done";
+const UNFINISHED: JobStatus[] = ["queued", "claimed", "running"];
+
+export interface Job {
+  id: number;
+  project: string;
+  feature: string | null;
+  command: JobCommand;
+  status: JobStatus;
+  error: string | null;
+  session_id: string | null;
+  created_at: string;
+  claimed_at: string | null;
+  finished_at: string | null;
+}
+
+export function isJobCommand(v: unknown): v is JobCommand {
+  return typeof v === "string" && (JOB_COMMANDS as readonly string[]).includes(v);
+}
+
 export class Store {
   private db: DatabaseSync;
 
@@ -61,6 +88,19 @@ export class Store {
         dismissed INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS sessions_updated ON sessions (updated_at);
+      CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project TEXT NOT NULL,
+        feature TEXT,
+        command TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error TEXT,
+        session_id TEXT,
+        created_at TEXT NOT NULL,
+        claimed_at TEXT,
+        finished_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status, created_at);
     `);
     // Added later; older databases backfill from updated_at.
     const cols = this.db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
@@ -122,5 +162,70 @@ export class Store {
 
   dismiss(id: string): boolean {
     return this.db.prepare("UPDATE sessions SET dismissed = 1 WHERE id = ?").run(id).changes > 0;
+  }
+
+  // --- jobs ------------------------------------------------------------------
+
+  // Returns the existing job instead of a new one when this feature already has unfinished
+  // work queued. The guard lives here rather than in the UI because the UI is the thing that
+  // gets tapped twice on a slow connection.
+  enqueue(job: { project: string; feature: string | null; command: JobCommand }, now = new Date().toISOString()): { job: Job; created: boolean } {
+    const existing = this.db
+      .prepare(
+        `SELECT * FROM jobs WHERE project = ? AND feature IS ? AND status IN (${UNFINISHED.map(() => "?").join(",")})
+         ORDER BY created_at LIMIT 1`,
+      )
+      .get(job.project, job.feature, ...UNFINISHED) as Job | undefined;
+    if (existing) return { job: existing, created: false };
+
+    const id = this.db
+      .prepare("INSERT INTO jobs (project, feature, command, status, created_at) VALUES (?, ?, ?, 'queued', ?)")
+      .run(job.project, job.feature, job.command, now).lastInsertRowid;
+    return { job: this.job(Number(id))!, created: true };
+  }
+
+  // Compare-and-swap, so two runners can never claim the same job.
+  claimNext(now = new Date().toISOString()): Job | undefined {
+    const next = this.db
+      .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1")
+      .get() as Job | undefined;
+    if (!next) return undefined;
+    const claimed = this.db
+      .prepare("UPDATE jobs SET status = 'claimed', claimed_at = ? WHERE id = ? AND status = 'queued'")
+      .run(now, next.id).changes;
+    return claimed ? this.job(next.id) : undefined;
+  }
+
+  // `running` is not terminal, so it leaves finished_at alone and keeps blocking duplicates.
+  setJobStatus(
+    id: number,
+    status: JobStatus,
+    extra: { error?: string | null; sessionId?: string | null } = {},
+    now = new Date().toISOString(),
+  ): Job | undefined {
+    const terminal = status === "done" || status === "failed";
+    this.db
+      .prepare(
+        `UPDATE jobs SET status = ?, error = COALESCE(?, error), session_id = COALESCE(?, session_id),
+         finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ?`,
+      )
+      .run(status, extra.error ?? null, extra.sessionId ?? null, terminal ? 1 : 0, now, id);
+    return this.job(id);
+  }
+
+  job(id: number): Job | undefined {
+    return this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Job | undefined;
+  }
+
+  // Everything unfinished, plus anything that finished in the last `hours` — so a failure stays
+  // visible long enough to be read rather than vanishing the moment it happens.
+  listJobs(hours = 24): Job[] {
+    const since = new Date(Date.now() - hours * 3600_000).toISOString();
+    return this.db
+      .prepare(
+        `SELECT * FROM jobs WHERE status IN (${UNFINISHED.map(() => "?").join(",")}) OR finished_at >= ?
+         ORDER BY created_at DESC`,
+      )
+      .all(...UNFINISHED, since) as unknown as Job[];
   }
 }

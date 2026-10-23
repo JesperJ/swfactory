@@ -1,5 +1,8 @@
 // Two secrets:
-//   FACTORY_HOOK_TOKEN  - bearer token the Claude Code hooks send. Can only report session events.
+//   FACTORY_HOOK_TOKEN   - bearer token the Claude Code hooks send. Can only report session events.
+//   FACTORY_RUNNER_TOKEN - bearer token the host-side runner sends. Can claim jobs and report
+//                          their outcome. Kept separate from the hook token, which sits in
+//                          every Claude session on the machine and is comparatively exposed.
 //   FACTORY_PASSWORD    - what you type once per device to open the dashboard.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -51,7 +54,9 @@ export function requireUi(password: string): MiddlewareHandler {
   };
 }
 
-export function requireHookToken(token: string): MiddlewareHandler {
+// Shared by the hook and runner endpoints; they differ only in which secret they check, so a
+// leaked hook token cannot reach the runner endpoints that make the host run things.
+export function requireBearer(token: string): MiddlewareHandler {
   return async (c, next) => {
     const auth = c.req.header("authorization") ?? "";
     const given = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";

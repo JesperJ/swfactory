@@ -115,11 +115,11 @@ recovers from the dashboard being down or restarted without any reconnect logic,
 more here than the few seconds of latency it costs.
 
 ## Tasks
-- [ ] `jobs` table and store methods in `src/db.ts`, with the duplicate-job guard, plus tests
-- [ ] Generalise `requireHookToken` to `requireBearer` in `src/auth.ts`; add `FACTORY_RUNNER_TOKEN`
-- [ ] `POST /api/jobs` with the command enum validated server-side, plus a test for rejection
-- [ ] `GET /api/jobs/next` and `POST /api/jobs/:id/status` behind the runner token, plus tests
-- [ ] Expose queued jobs in `/api/state` so the UI can show them
+- [x] `jobs` table and store methods in `src/db.ts`, with the duplicate-job guard, plus tests
+- [x] Generalise `requireHookToken` to `requireBearer` in `src/auth.ts`; add `FACTORY_RUNNER_TOKEN`
+- [x] `POST /api/jobs` with the command enum validated server-side, plus a test for rejection
+- [x] `GET /api/jobs/next` and `POST /api/jobs/:id/status` behind the runner token, plus tests
+- [x] Expose queued jobs in `/api/state` so the UI can show them
 - [ ] Buttons on the Next hero, Next rows and the feature sheet, mapping `kind` to a command
 - [ ] `scripts/runner.ts`: poll, resolve the checkout by git remote, launch tmux, report back
 - [ ] A `failed` job shows its reason on the dashboard rather than disappearing
