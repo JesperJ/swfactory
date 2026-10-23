@@ -69,30 +69,30 @@ Drawn as inline SVG, not an image file: it has to re-colour with the theme, scal
 and show live numbers.
 
 ## Acceptance criteria
-- [ ] On desktop, Next renders a table with Do, Project, Feature, Priority, Status, Why, and an
+- [x] On desktop, Next renders a table with Do, Project, Feature, Priority, Status, Why, and an
       action cell
-- [ ] At least 12 rows fit on a 1366×860 screen without scrolling
-- [ ] Priority is visible on every row, on both desktop and phone
-- [ ] The project is a column on desktop, not a subtitle
-- [ ] Clicking a row opens that feature's spec; the action button still queues its job and is
+- [ ] At least 12 rows fit on a 1366×860 screen without scrolling — **not met: 7 fit today**
+- [x] Priority is visible on every row, on both desktop and phone
+- [x] The project is a column on desktop, not a subtitle
+- [x] Clicking a row opens that feature's spec; the action button still queues its job and is
       not triggered by clicking the row
-- [ ] Rows can be sorted by priority as well as by the default ranking, and the choice persists
+- [x] Rows can be sorted by priority as well as by the default ranking, and the choice persists
       across a reload
-- [ ] On a phone, every row shows priority and project, with no horizontal scrolling
-- [ ] Blocked items remain grouped last and keep their reason
-- [ ] A queued, running, failed or stale job shows in the action cell exactly as it does now,
+- [x] On a phone, every row shows priority and project, with no horizontal scrolling
+- [x] Blocked items remain grouped last and keep their reason
+- [x] A queued, running, failed or stale job shows in the action cell exactly as it does now,
       including the failure reason and the retry button
-- [ ] `npm run shoot` passes: no console errors, no overflow, tab bar on one row
-- [ ] Projects shows a lifecycle strip with all six stages in order: idea, specced, planned,
+- [x] `npm run shoot` passes: no console errors, no overflow, tab bar on one row
+- [x] Projects shows a lifecycle strip with all six stages in order: idea, specced, planned,
       building, reviewing, done
-- [ ] Each stage shows a live count of features in it across active projects, and the counts
+- [x] Each stage shows a live count of features in it across active projects, and the counts
       sum to the number of features in those projects
-- [ ] A stage with no features is dimmed, not hidden — the shape of the process stays constant
-- [ ] Each stage uses the same colour that status already uses elsewhere in the UI
-- [ ] The strip re-colours in dark mode and fits a 390px screen without horizontal scrolling,
+- [x] A stage with no features is dimmed, not hidden — the shape of the process stays constant
+- [x] Each stage uses the same colour that status already uses elsewhere in the UI
+- [x] The strip re-colours in dark mode and fits a 390px screen without horizontal scrolling,
       wrapping rather than scrolling sideways (HTML and CSS, with the arrow as an inline SVG
       glyph — see the Plan for why not SVG throughout)
-- [ ] The strip appears on Projects only, never on Next
+- [x] The strip appears on Projects only, never on Next
 
 ## Out of scope
 - Changing the ranking rules themselves. This is how the ranking is displayed, not what it
@@ -153,15 +153,15 @@ most likely to come back from review, so it gets screenshotted at 390px before t
 is called done.
 
 ## Tasks
-- [ ] `featureAction` and `NextItem` carry `priority` and `status`; test that a ranked item
+- [x] `featureAction` and `NextItem` carry `priority` and `status`; test that a ranked item
       exposes the same priority as its spec
-- [ ] `lifecycleCounts`, pure, with tests for ordering, empty stages and the sum
-- [ ] The desktop table in `renderNext`, reusing `startControl` unchanged
-- [ ] The phone layout: priority and project on every row, no horizontal scroll
-- [ ] Row click opens the spec; the action cell does not trigger it
-- [ ] Sort toggle between ranking and priority, persisted in `localStorage`, defaulting safely
-- [ ] The lifecycle strip on Projects: stages in order, live counts, empty stages dimmed
-- [ ] Screenshots at 390px then 1366px, light and dark; `npm run shoot` clean
+- [x] `lifecycleCounts`, pure, with tests for ordering, empty stages and the sum
+- [x] The desktop table in `renderNext`, reusing `startControl` unchanged
+- [x] The phone layout: priority and project on every row, no horizontal scroll
+- [x] Row click opens the spec; the action cell does not trigger it
+- [x] Sort toggle between ranking and priority, persisted in `localStorage`, defaulting safely
+- [x] The lifecycle strip on Projects: stages in order, live counts, empty stages dimmed
+- [x] Screenshots at 390px then 1366px, light and dark; `npm run shoot` clean
 
 ## Open questions
 These are the calls I made. Each is a decision to overturn, not a question to answer.
@@ -199,3 +199,23 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   the criterion's real intent — theme-aware, fits a phone, live numbers — is better served by
   HTML and CSS with the arrow as the only SVG. That criterion is reworded, not dropped. 8 tasks.
 - 2026-10-23 Build started on `feature/012-next-table` in the live checkout.
+- 2026-10-23 Built. The table replaced the hero, the strip is on Projects, and the sort toggle
+  persists. 107 tests, typecheck clean, shoot clean at 390px and 1366px in both themes.
+  Three things worth recording, none of them in the plan:
+  - A `td` styled `display: flex` leaves table layout entirely and every column stops aligning.
+    The flex box has to go inside the cell.
+  - The new `<tr>` reused the class name `nextrow`, which the superseded list CSS still owned
+    with `display: grid`. The rows rendered as stacked cards and looked exactly like a broken
+    media query. The dead `.nextlist`/`.nextrow` rules are now deleted rather than left to
+    collide again, with the kind colours re-emitted unscoped.
+  - On a phone the strip wrapped with an arrow stranded at the start of the second line,
+    pointing at nothing. Below 600px it is a three-column grid with no arrows.
+  **One criterion is not met and is left unticked:** 7 rows fit a 1366×860 screen, not 12.
+  Average row height is 78px, inflated by three rows currently carrying a failure block with
+  its reason and retry button. Rows without one are around 50px, where 12 would fit. The
+  criterion as written is about density and the honest answer today is that it fails; whether
+  to shrink the failure block or lower the number is a judgement for review.
+  Verification click: tapping a row's action in the probe queued a real job, which the running
+  runner then started as `/factory review 005` in this checkout while it was on the 012 branch.
+  Killed before it did anything and the runner stopped. Nothing was committed. That is the
+  worktree hazard, caused this time by a test of the very button that causes it.

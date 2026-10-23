@@ -24,7 +24,7 @@ const TABS = [
   { id: "sessions", label: "Sessions", icon: icons.sessions },
 ];
 
-let state = { projects: [], sessions: [], jobs: [], next: [], now: new Date().toISOString() };
+let state = { projects: [], sessions: [], jobs: [], next: [], lifecycle: [], now: new Date().toISOString() };
 let featureFilter = "all";
 const expandedDone = new Set();
 
@@ -202,41 +202,83 @@ function featureItem(projectSlug, feature) {
 }
 
 // One recommendation, a few alternatives. Everything here is a thing you could start now.
+// Ranking order, or strictly by priority. A view preference, so it lives per-device in
+// localStorage rather than on the server — and every read is guarded, because storage throws
+// in a private window rather than returning null.
+const SORTS = { ranked: "Ranked", priority: "Priority" };
+let nextSort = (() => {
+  try {
+    const v = localStorage.getItem("factory.nextSort");
+    return v in SORTS ? v : "ranked";
+  } catch {
+    return "ranked";
+  }
+})();
+
+function setNextSort(v) {
+  nextSort = v in SORTS ? v : "ranked";
+  try {
+    localStorage.setItem("factory.nextSort", nextSort);
+  } catch {
+    /* a preference that cannot be saved is still worth applying for this visit */
+  }
+}
+
+// Sorting by priority keeps the ranking as the tiebreak, so items of equal priority still
+// arrive in the order the factory thinks is most useful. Items with no priority (sessions)
+// sort after P3 rather than before P1, which is where an unprioritised thing belongs.
+function sortedNext(items) {
+  if (nextSort !== "priority") return items;
+  const rank = (p) => (p?.match(/P(\d)/i) ? Number(p.match(/P(\d)/i)[1]) : 99);
+  return items.slice().sort((a, b) => rank(a.priority) - rank(b.priority) || a.score - b.score);
+}
+
 function renderNext() {
   const items = state.next ?? [];
-  const live = items.filter((i) => !i.blocked);
-  const blocked = items.filter((i) => i.blocked);
+  const live = sortedNext(items.filter((i) => !i.blocked));
+  const blocked = sortedNext(items.filter((i) => i.blocked));
   if (!live.length && !blocked.length)
     return empty("Nothing waiting", "No sessions need you and no feature is ready to move. Add an idea with <code>/factory spec</code>.");
 
-  const [top, ...rest] = live;
   const link = (i) => (i.projectSlug ? docHash(i.projectSlug, i.feature ?? undefined) : null);
 
-  const hero = top
-    ? `<article class="card hero k-${esc(top.kind)}">
-        <div class="hero-kicker">${esc(top.project)}${top.feature ? ` <span class="sep">›</span> ${esc(top.feature.slice(0, 3))}` : ""}</div>
-        <h2 class="hero-title">${esc(top.action)} ${esc(top.title)}</h2>
-        <p class="hero-why">${esc(top.reason)}</p>
-        <div class="actions">
-          ${top.url ? `<a class="btn primary" href="${esc(top.url)}" target="_blank" rel="noopener" data-seen="${esc(top.sessionId)}">Open session ${icons.open}</a>` : ""}
-          ${startControl(top, { primary: !top.url })}
-          ${link(top) ? `<a class="btn" href="${link(top)}">Open spec</a>` : ""}
-          ${!top.url && !link(top) ? `<a class="btn primary" href="#/inbox">See in inbox</a>` : ""}
-        </div>
-      </article>`
-    : "";
+  // One row markup for both layouts. Which one shows is a media query's decision, so the two
+  // can never disagree about the viewport the way two JS branches could.
+  const row = (i) => {
+    const control = startControl(i);
+    const open = i.url
+      ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener" data-seen="${esc(i.sessionId)}">Open ${icons.open}</a>`
+      : "";
+    return `<tr class="ntrow k-${esc(i.kind)}" data-open="${esc(link(i) ?? "#/inbox")}">
+      <td class="c-do"><span class="dot k-${esc(i.kind)}"></span><b>${esc(i.action)}</b></td>
+      <td class="c-project">${esc(i.project)}</td>
+      <td class="c-feature">
+        <span class="fid">${i.feature ? esc(i.feature.slice(0, 3)) : ""}</span>
+        <span class="ftitle">${esc(i.title)}</span>
+        <span class="c-sub">${i.priority ? `<span class="prio p-${esc(i.priority)}">${esc(i.priority)}</span>` : ""}${esc(i.project)}${i.status ? ` · ${esc(i.status)}` : ""}</span>
+      </td>
+      <td class="c-prio">${i.priority ? `<span class="prio p-${esc(i.priority)}">${esc(i.priority)}</span>` : ""}</td>
+      <td class="c-status">${i.status ? `<span class="fstatus"><span class="status-dot ${statusClass(i.status)}"></span>${esc(i.status)}</span>` : ""}</td>
+      <td class="c-why">${esc(i.reason)}</td>
+      <td class="c-action">${open}${control}</td>
+    </tr>`;
+  };
 
-  const row = (i) =>
-    `<li><a class="nextrow" href="${link(i) ?? "#/inbox"}">
-      <span class="dot k-${esc(i.kind)}"></span>
-      <span class="nextmain"><b>${esc(i.action)}</b> ${esc(i.title)}</span>
-      <span class="nextwhy">${esc(i.project)} · ${esc(i.reason)}</span>
-    </a>${startControl(i) ? `<div class="rowaction">${startControl(i)}</div>` : ""}</li>`;
+  const table = (rows, extraClass = "") => `<div class="tablewrap ${extraClass}"><table class="nexttable">
+      <thead><tr>
+        <th class="c-do">Do</th><th class="c-project">Project</th><th class="c-feature">Feature</th>
+        <th class="c-prio">Pri</th><th class="c-status">Status</th><th class="c-why">Why</th><th class="c-action"></th>
+      </tr></thead>
+      <tbody>${rows.map(row).join("")}</tbody>
+    </table></div>`;
 
-  const alts = rest.slice(0, 4);
-  return `${hero}
-    ${alts.length ? `<div class="section"><h2>Then</h2></div><ul class="nextlist">${alts.map(row).join("")}</ul>` : ""}
-    ${blocked.length ? `<div class="section"><h2>Blocked</h2><span class="n">${blocked.length}</span></div><ul class="nextlist blocked">${blocked.slice(0, 4).map(row).join("")}</ul>` : ""}`;
+  const toggle = `<div class="sorts">${Object.entries(SORTS)
+    .map(([k, label]) => `<button class="filter" data-sort="${k}" aria-pressed="${nextSort === k}">${label}</button>`)
+    .join("")}</div>`;
+
+  return `${toggle}
+    ${live.length ? table(live) : ""}
+    ${blocked.length ? `<div class="section"><h2>Blocked</h2><span class="n">${blocked.length}</span></div>${table(blocked, "blocked")}` : ""}`;
 }
 
 function renderInbox() {
@@ -313,6 +355,24 @@ function projectCard(p, { showAllDone = false } = {}) {
   </article>`;
 }
 
+// The process itself, drawn once: the stages in order, with how much work sits at each.
+// Every stage shows even when empty, so the shape stays constant and a pile-up is visible.
+function lifecycleStrip() {
+  const stages = state.lifecycle ?? [];
+  if (!stages.length) return "";
+  const arrow = `<svg class="lc-arrow" viewBox="0 0 12 8" aria-hidden="true"><path d="M0 4h9M6 1l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `<div class="lifecycle" role="img" aria-label="Lifecycle: ${stages.map((s) => `${s.count} ${s.status}`).join(", ")}">
+    ${stages
+      .map(
+        (s, n) => `${n ? arrow : ""}<div class="lc-stage ${s.count ? "" : "lc-empty"}">
+          <span class="lc-count ${statusClass(s.status)}">${s.count}</span>
+          <span class="lc-name">${esc(s.status)}</span>
+        </div>`,
+      )
+      .join("")}
+  </div>`;
+}
+
 function renderProjects(focus) {
   const all = state.projects.flatMap((p) => p.features);
   const filters = ["all", ...STATUS_ORDER].flatMap((st) => {
@@ -331,7 +391,7 @@ function renderProjects(focus) {
       ${sessions.length ? `<div class="section"><h2>Sessions</h2><span class="n">${sessions.length}</span></div><div class="stack wide">${sessions.map((s) => sessionCard(s)).join("")}</div>` : ""}`;
   }
   const cards = state.projects.map((p) => projectCard(p)).filter(Boolean);
-  return `<div class="filters">${filters.join("")}</div>
+  return `${lifecycleStrip()}<div class="filters">${filters.join("")}</div>
     <div class="grid cols">${cards.join("") || empty("Nothing here", "No features with that status.")}</div>`;
 }
 
@@ -513,6 +573,21 @@ function connect() {
 document.addEventListener("click", async (e) => {
   // Opening a session is acting on it, so the notification clears itself. Any later status
   // change on that session brings it back; a repeated idle nudge does not.
+  const sort = e.target.closest("[data-sort]");
+  if (sort) {
+    setNextSort(sort.dataset.sort);
+    render();
+    return;
+  }
+  // A table row opens its spec, except where the row's own controls live: tapping Build must
+  // not also slide the sheet open behind it.
+  const openRow = e.target.closest("tr[data-open]");
+  if (openRow && !e.target.closest(".c-action")) {
+    const doc = openRow.dataset.open.split("/doc/")[1];
+    if (doc) openDoc(...doc.split("/").map(decodeURIComponent));
+    else location.hash = openRow.dataset.open;
+    return;
+  }
   const start = e.target.closest("[data-start]");
   if (start) {
     const [project, feature, command] = start.dataset.start.split("/");

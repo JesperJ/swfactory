@@ -414,36 +414,15 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .hero .actions { margin-top: 8px; }
 @media (min-width: 900px) { .hero { padding: 22px 22px 20px; } .hero-title { font-size: 25px; } }
 
-.nextlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.nextrow {
-  display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: baseline;
-  padding: 12px 14px; min-height: 44px; text-decoration: none; color: inherit;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-}
-.nextrow:hover { background: var(--surface-2); }
-.nextrow .dot { width: 9px; height: 9px; border-radius: 50%; grid-row: 1; align-self: center; }
-.nextrow .dot.k-answer { background: var(--needs); }
-.nextrow .dot.k-review { background: var(--turn); }
-.nextrow .dot.k-approve { background: var(--st-reviewing); }
-.nextrow .dot.k-unstick { background: var(--st-building); }
-.nextrow .dot.k-build { background: var(--st-planned); }
-.nextrow .dot.k-plan { background: var(--st-specced); }
-.nextrow .dot.k-spec { background: var(--st-idea); }
-.nextmain { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nextmain b { font-weight: 650; }
-.nextwhy { grid-column: 2; font-size: 12.5px; color: var(--text-3); }
-.nextlist.blocked .nextrow { opacity: .72; }
-@media (min-width: 1100px) { .nextlist { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-
-/* The row and its action share one card, so an action is never visually orphaned between two.
-   A Failed pill floating between cards reads as belonging to the wrong row. */
-.nextlist li {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.nextlist li:hover { background: var(--surface-2); }
-.nextlist .nextrow { background: none; border: 0; border-radius: 0; }
-.nextlist .nextrow:hover { background: none; }
+/* Action dots: shared by the Next table and anywhere else a kind needs a colour. */
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.k-answer { background: var(--needs); }
+.dot.k-review { background: var(--turn); }
+.dot.k-approve { background: var(--st-reviewing); }
+.dot.k-unstick { background: var(--st-building); }
+.dot.k-build { background: var(--st-planned); }
+.dot.k-plan { background: var(--st-specced); }
+.dot.k-spec { background: var(--st-idea); }
 .rowaction {
   display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   padding: 0 14px 12px; margin-top: -4px;
@@ -461,3 +440,85 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .btn.retry { border-color: var(--needs); color: var(--needs); }
 .featurerow { display: grid; }
 .sheet-action { margin-bottom: 18px; display: flex; justify-content: flex-end; }
+
+/* ---------- Next as a table ---------- */
+.sorts { display: flex; gap: 6px; margin: 4px 0 12px; }
+.tablewrap { overflow: visible; }
+.nexttable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.nexttable thead th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-3); font-weight: 700; padding: 0 10px 8px; white-space: nowrap;
+}
+.nexttable tbody tr {
+  background: var(--surface); border-top: 1px solid var(--border); cursor: pointer;
+}
+.nexttable tbody tr:hover { background: var(--surface-2); }
+.nexttable td { padding: 10px; vertical-align: middle; }
+/* Never display:flex on a td — it removes the cell from table layout and every column stops
+   aligning. The flex box goes inside the cell instead. */
+.nexttable td.c-do { white-space: nowrap; }
+.nexttable td.c-do > * { vertical-align: middle; }
+.nexttable td.c-do .dot { display: inline-block; margin-right: 8px; }
+.nexttable .c-project { color: var(--text-2); white-space: nowrap; }
+.nexttable .ftitle { display: block; overflow: hidden; text-overflow: ellipsis; }
+.nexttable .fid { font: 12px var(--mono); color: var(--text-3); margin-right: 6px; }
+.nexttable .c-why { color: var(--text-3); font-size: 13px; }
+.nexttable .c-action { text-align: right; white-space: nowrap; }
+.nexttable .c-action .btn { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.nexttable .c-sub { display: none; }
+.tablewrap.blocked tbody tr { opacity: .7; }
+
+.prio {
+  display: inline-block; min-width: 26px; text-align: center; padding: 2px 6px; border-radius: 6px;
+  font: 600 12px var(--font); background: var(--surface-2); color: var(--text-2);
+}
+.prio.p-P1 { background: color-mix(in srgb, var(--needs) 18%, transparent); color: var(--needs); }
+.prio.p-P2 { background: color-mix(in srgb, var(--working) 16%, transparent); color: var(--working); }
+
+/* Phone: the same rows, stacked. A seven-column table at 390px means sideways scrolling,
+   which is worse than the list it replaced. */
+@media (max-width: 899px) {
+  .nexttable thead { display: none; }
+  .nexttable, .nexttable tbody, .nexttable tr, .nexttable td { display: block; width: 100%; }
+  .nexttable tbody tr {
+    border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px;
+    padding: 10px 12px; position: relative;
+  }
+  .nexttable td { padding: 0; }
+  .nexttable td.c-do { margin-bottom: 2px; }
+  .nexttable td.c-do .dot { margin-right: 8px; }
+  .nexttable .c-project, .nexttable .c-prio, .nexttable .c-status { display: none; }
+  .nexttable .c-sub {
+    display: flex; align-items: center; gap: 6px; margin-top: 3px;
+    font-size: 12.5px; color: var(--text-3);
+  }
+  .nexttable .c-why { margin-top: 4px; }
+  .nexttable .c-action:empty { display: none; }
+  .nexttable .c-action { margin-top: 10px; text-align: right; }
+  .nexttable .c-action .btn { min-height: 44px; }
+}
+
+/* ---------- Lifecycle strip ---------- */
+.lifecycle {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 6px 4px; padding: 14px 16px; margin-bottom: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.lc-stage { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 56px; }
+.lc-count {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  color: #fff; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums;
+}
+.lc-name { font-size: 11.5px; color: var(--text-2); letter-spacing: .01em; }
+/* Dimmed, never hidden: the shape of the process must not change with where work happens to sit. */
+.lc-empty { opacity: .35; }
+.lc-arrow { width: 14px; height: 9px; color: var(--text-3); flex: none; }
+@media (max-width: 460px) { .lc-stage { min-width: 44px; } .lc-name { font-size: 10.5px; } }
+
+/* Narrow: a wrapping flex row leaves an arrow stranded at the start of the second line, which
+   reads as pointing at nothing. Below 600px the strip becomes a grid and the arrows go: the
+   left-to-right order still carries the sequence, and three per row stays legible. */
+@media (max-width: 599px) {
+  .lifecycle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 4px; }
+  .lc-arrow { display: none; }
+}
