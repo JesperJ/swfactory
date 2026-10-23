@@ -19,10 +19,19 @@ Type=simple
 WorkingDirectory=%h/code/repos/swfactory
 Environment=FACTORY_URL=http://localhost:8088
 Environment=FACTORY_REPO_ROOT=%h/code/repos
+# Put sessions on the same tmux server your shell uses, or `tmux ls` will not show them and
+# the "attach to a session that is waiting for you" promise quietly fails. systemd user units
+# get no TMUX_TMPDIR, so tmux would default to /tmp/tmux-UID while a desktop shell commonly
+# sets /run/user/UID. %t is XDG_RUNTIME_DIR; drop this line if your shell leaves it unset.
+Environment=TMUX_TMPDIR=%t
 # The runner token, NOT the hook token. Keep it out of this file:
 #   systemctl --user edit factory-runner   ->   [Service] Environment=FACTORY_RUNNER_TOKEN=...
 # or point at a file only you can read:
 EnvironmentFile=-%h/.config/factory-runner.env
+# Node must be an absolute path: systemd user units do not get your shell's PATH. On a system
+# where node is installed globally, /usr/bin/env node is fine. With devenv (or nix), point at
+# the profile symlink, which survives rebuilds:
+#   ExecStart=%h/code/repos/swfactory/.devenv/profile/bin/node ...
 ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning scripts/runner.ts
 Restart=always
 RestartSec=10

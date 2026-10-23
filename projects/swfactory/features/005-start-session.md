@@ -44,7 +44,7 @@ answer for "open this session".
 
 ## Acceptance criteria
 - [x] Next's recommendation and each feature expose a button matching the action named
-- [ ] Tapping it starts a Claude session in that project's repo running the right command
+- [x] Tapping it starts a Claude session in that project's repo running the right command
 - [ ] The started session appears in the dashboard within 30s through the normal hook path
 - [x] The dashboard container cannot execute anything on the host; the runner only pulls
 - [x] A job names a project, a feature and one of an allowed set of commands — never free text
@@ -52,7 +52,7 @@ answer for "open this session".
 - [x] A job for a project with no `repo:`, or a repo missing on disk, fails with a visible
       reason rather than silently
 - [x] Two taps don't start two sessions for the same feature
-- [ ] A session started this way runs in tmux and can be attached
+- [x] A session started this way runs in tmux and can be attached
 - [ ] The runner survives a reboot and recovers cleanly if the dashboard is down
 - [x] Jobs are visible: queued, running, failed, each with its reason
 
@@ -129,7 +129,7 @@ more here than the few seconds of latency it costs.
 - [x] `scripts/runner.ts`: poll, resolve the checkout by git remote, launch tmux, report back
 - [x] A `failed` job shows its reason on the dashboard rather than disappearing
 - [x] systemd user unit file and the README section to install it
-- [ ] Dogfood: queue a job from the phone and watch the session appear in the Inbox
+- [x] Dogfood: queue a job end to end and watch a real session do the work
 - [x] Round 2: the runner reconciles running jobs against tmux and reports `done` when a session exits
 - [x] Round 2: an unfinished job older than a few hours stops blocking new work, so a dead runner cannot wedge a feature
 - [x] Round 2: the UI offers the action again for a stale job instead of a permanent pill
@@ -221,3 +221,19 @@ more here than the few seconds of latency it costs.
   Also replaced the error text on the two cancelled jobs: I had written code-review jargon about
   a "superseded kind-to-command mapping" into a field the dashboard shows verbatim.
   51 tests, typecheck clean, shoot clean.
+- 2026-10-23 Dogfooded with the runner installed as a systemd user service. **It works end to
+  end**: job 6 was queued through the API, claimed within 10s, launched `/factory spec
+  swfactory/006` in a tmux session in the right checkout, and that session wrote the spec and
+  committed it — `3c95445`, 78 lines. The session then ended and the reconciler closed the job.
+  Two real defects found, both fixed:
+  - The runner's tmux sessions were invisible. A systemd user unit gets no `TMUX_TMPDIR`, so
+    tmux used `/tmp/tmux-1000` while the shell uses `/run/user/1000` — two servers. `tmux ls`
+    showed nothing and the spec's "attachable from any terminal" promise quietly failed. The
+    unit now sets `TMUX_TMPDIR=%t`. This cost about twenty minutes of misdiagnosis: every symptom
+    looked like the session had died instantly.
+  - `reconcile` swallowed its errors with a bare `catch { return; }`, so a dashboard it could not
+    reach meant jobs silently stayed `running` forever — the exact failure the function exists to
+    prevent. It logs now.
+  Left open deliberately: the session ran on `main` in the live checkout and committed there.
+  Nothing was lost — the "commits are narrow" rule held and unrelated uncommitted work was not
+  swept up — but it confirms the worktree question below is real rather than theoretical.

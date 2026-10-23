@@ -115,10 +115,16 @@ async function reconcile(): Promise<void> {
   let running: Job[] = [];
   try {
     const res = await fetch(`${BASE}/api/jobs/running`, { headers: auth });
-    if (!res.ok) return;
+    if (!res.ok) {
+      // Never silent: a reconcile that quietly does nothing leaves jobs stuck at `running`
+      // forever, which is the exact defect this function exists to prevent.
+      console.error(`[runner] reconcile: dashboard returned ${res.status}`);
+      return;
+    }
     running = (await res.json()).jobs ?? [];
-  } catch {
-    return; // dashboard down; the next tick will try again
+  } catch (err) {
+    console.error("[runner] reconcile failed:", (err as Error).message);
+    return;
   }
   for (const job of running) {
     if (await tmuxSessionExists(sessionName(job))) continue;
