@@ -1,0 +1,30 @@
+---
+title: Sessions report to the dashboard
+status: building
+priority: P1
+summary: Claude Code hooks send session status (working, your turn, needs you) with a link back.
+---
+
+# Sessions report to the dashboard
+
+## Why
+The dashboard is only useful if it knows about every session without me or Claude doing anything.
+
+## What
+A hook script, installed per machine or per repo, posts each session event to the dashboard.
+The dashboard links the session to a project (git remote) and feature (branch name).
+
+## Acceptance criteria
+- [x] SessionStart, UserPromptSubmit, Notification, Stop and SessionEnd update the session status
+- [x] Cloud sessions include a link to open them on claude.ai
+- [x] Git credentials in the remote URL are never sent
+- [x] Hooks never slow down or fail a session when the dashboard is unreachable
+- [x] `npm run install-hooks` sets it up for a machine or a repo
+- [ ] Local Remote Control sessions get a clickable link
+
+## Open questions
+- Does Claude Code expose the Remote Control URL to hooks for local sessions? Until then,
+  `FACTORY_SESSION_URL` can be set by hand.
+
+## Log
+- 2026-10-23 First version.

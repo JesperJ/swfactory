@@ -1,0 +1,29 @@
+# fly launch --copy-config --no-deploy   (pick your own app name)
+# fly volumes create factory_data --size 1
+# fly secrets set FACTORY_PASSWORD=... FACTORY_HOOK_TOKEN=... SPECS_GIT_URL=https://<token>@github.com/<you>/swfactory.git
+# fly deploy
+app = "swfactory"
+primary_region = "arn"
+
+[build]
+
+[env]
+  PORT = "8080"
+  DATA_DIR = "/data"
+  SPECS_SYNC_SECONDS = "60"
+
+[[mounts]]
+  source = "factory_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Keep one machine up so live updates and hooks always land.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
