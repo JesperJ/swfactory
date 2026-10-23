@@ -1,18 +1,23 @@
 ---
-description: Write a feature spec (why, what, acceptance criteria) for a project
+description: Draft a feature spec (why, what, acceptance criteria) for a project
 argument-hint: <project-slug> <feature idea>
 ---
 
-Write a feature spec. Input: $ARGUMENTS
+Draft a feature spec. Input: $ARGUMENTS
 
-1. Find the specs folder and the project (ask if the project is ambiguous). Read its
-   `project.md` and the titles and statuses of its existing features, so you don't duplicate one.
-2. Ask the user only what you need to write testable acceptance criteria (at most 4 questions,
-   one message). Push back if the feature is really two features.
-3. Number it: next free 3-digit id in `<project>/features/`. Create
-   `<project>/features/<NNN>-<kebab-slug>.md` from `templates/feature.md` with `status: specced`.
-   Fill Why, What, Acceptance criteria (observable and testable), Out of scope and Open questions.
-   Leave Plan, Tasks and Log empty.
-4. Show the user the acceptance criteria and ask them to approve or change them. A spec isn't
-   ready for `/plan` until they approve.
-5. Commit with message `factory: spec <project>/<NNN>-<slug>`.
+Propose, don't interview. Do not open with questions.
+
+1. Find the specs folder and the project. Read `project.md` and the existing feature titles and
+   statuses so you don't duplicate one.
+2. Write the whole spec now, from the project context and the idea given. Fill Why, What,
+   Acceptance criteria (observable and testable), and Out of scope. Make the obvious calls
+   yourself. Where you had to assume something, put it under Open questions with the assumption
+   you made, so it reads as a decision he can overturn rather than a question he must answer.
+3. Number it: next free 3-digit id. Write `<project>/features/<NNN>-<kebab-slug>.md` with
+   `status: specced`.
+4. Reply with the acceptance criteria only, plus any assumption worth challenging, in a few
+   lines. Not the whole spec — it's on disk.
+5. Commit `factory: spec <project>/<NNN>-<slug>`.
+
+Only stop and ask first if the idea is too vague to draft anything honest, or if it's really
+two features and the split changes what you'd write.

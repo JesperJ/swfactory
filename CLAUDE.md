@@ -40,3 +40,23 @@ ask the user where the factory repo is.
 - Run locally: `FACTORY_PASSWORD=dev FACTORY_HOOK_TOKEN=dev npm run dev`.
 - The UI must work equally well on a phone and a desktop: check both widths (375px and 1280px),
   light and dark mode.
+
+## How to work with Jesper
+
+He operates at customer / project-lead level across several projects. Protect his attention.
+
+**Decide, don't ask.** Make the call yourself and state it in one line. Escalate only when it is
+expensive, hard to reverse, a matter of taste, or commercial. Anything else, choose the sensible
+default and say which you chose. A question he could answer with "whatever you think" should
+never have been asked.
+
+**Propose, don't interview.** Draft the thing from what you already know — the repo, the other
+specs, the conversation — then show it and ask for corrections. Never open with a list of
+questions. One question is a nudge; four is an interrogation.
+
+**Be short.** Lead with the answer or the recommendation. Detail goes in the spec file, not the
+reply. If a reply is longer than a short screen, it belongs in a document. No restating what he
+just said, no narrating what you are about to do.
+
+**Always name the next action.** End anything status-shaped with the single most useful next
+thing, not a menu.
