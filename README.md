@@ -140,3 +140,56 @@ remote to the project's `repo:`, so a renamed or wrong directory fails with a vi
 instead of running somewhere unintended.
 
 Attach to a started session with `tmux attach -t factory-<project>-<feature>`.
+
+## Notifications on your phone
+
+The dashboard pushes to your phone the moment a session blocks on you, or a job you queued
+fails. Nothing else notifies — `your_turn` fires on every turn of normal work and would train
+you to ignore the channel.
+
+Delivery is an outbound POST to [ntfy](https://ntfy.sh), so the dashboard needs no HTTPS origin,
+no certificate and no service worker. Web Push would need all three; see
+`projects/swfactory/decisions/2026-10-23-ntfy-over-web-push.md`.
+
+On the dashboard host, if you run it from this checkout:
+
+```sh
+# The topic is the only thing protecting the channel, so make it unguessable.
+printf 'NTFY_TOPIC=factory-%s\n' "$(openssl rand -hex 16)" >> .env
+printf 'FACTORY_PUBLIC_URL=%s\n' 'http://factory.local:3000' >> .env   # as your phone reaches it
+# restart the dashboard
+```
+
+Deployed on Fly.io, where appending to `.env` does nothing at all:
+
+```sh
+# Print it before shipping it: fly never shows a secret's value again, and you need it on the
+# phone in a moment.
+TOPIC="factory-$(openssl rand -hex 16)"; echo "$TOPIC"
+fly secrets set NTFY_TOPIC="$TOPIC" FACTORY_PUBLIC_URL='https://<your app>.fly.dev'
+```
+
+Set `NTFY_TOPIC` without `FACTORY_PUBLIC_URL` and the dashboard says so on startup — the
+notifications would arrive with nothing to tap.
+
+On the phone, once:
+
+1. Install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy),
+   [iOS](https://apps.apple.com/app/ntfy/id1625396347)).
+2. **+** → paste the topic you just set, exactly (just the topic, not a URL) → Subscribe.
+3. Check it end to end: `/factory build` something from the dashboard and let it hit a
+   permission prompt. The notification names the project, the feature and the host; tapping it
+   opens the inbox. Fail a job and the notification opens that feature, where the Retry button
+   is.
+
+Both notifications are sent at high priority, so they wake the screen on either platform
+without a per-subscription setting.
+
+A notification never carries prompt text, Claude's message, or a filesystem path — only project,
+feature, host and the link. An ntfy topic is a bearer secret in URL form: anyone who learns it
+can subscribe, and hosted ntfy.sh can read what passes through, so the body says "go and look"
+and nothing more. Treat the topic like the password; rotating it is one line in `.env` and a
+re-subscribe on the phone.
+
+Self-hosting is a swap of `NTFY_SERVER`. Leave `NTFY_TOPIC` unset and the dashboard notifies
+nothing.

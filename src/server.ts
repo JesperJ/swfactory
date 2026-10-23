@@ -12,6 +12,7 @@ import { featureAction, rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
+import { Notifier, fromEnv as notifierFromEnv } from "./notify.ts";
 
 const ROOT = resolve(fileURLToPath(import.meta.url), "../..");
 const PUBLIC = join(ROOT, "public");
@@ -23,12 +24,17 @@ export interface Config {
   hookToken: string;
   runnerToken: string;
   sync?: () => Promise<boolean>;
+  // Absent means a notifier with no sender: every endpoint behaves exactly as it did before
+  // notifications existed.
+  notifier?: Notifier;
 }
 
 export function createApp(cfg: Config) {
   const app = new Hono();
   const listeners = new Set<(event: string) => void>();
+  // `notify` fans out to the browsers watching the SSE stream; `notifier` pushes to the phone.
   const notify = (event: string) => listeners.forEach((fn) => fn(event));
+  const notifier = cfg.notifier ?? new Notifier();
 
   app.get("/healthz", (c) => c.text("ok"));
 
@@ -42,8 +48,27 @@ export function createApp(cfg: Config) {
     }
     const update = parseHook(payload, (name) => c.req.header(name));
     if (!update) return c.json({ error: "missing session_id or hook_event_name" }, 400);
-    cfg.store.upsert(update);
+    const { session, statusChanged } = cfg.store.upsert(update);
     notify("sessions");
+    // Fire and forget, deliberately not awaited: the hook's response must not depend on a
+    // third party being reachable. `link` is a thunk because resolving a session to a feature
+    // reads every spec, and almost no hook will send anything.
+    notifier.maybeSend({
+      kind: "session",
+      // Built field by field, not handed the row: the notifier's parameter type is a `Pick`,
+      // which is a compile-time shape only, so passing `session` whole would leave `prompt`,
+      // `message` and `cwd`'s full path sitting on the object one careless edit from the body.
+      session: {
+        id: session.id,
+        status: session.status,
+        host: session.host,
+        repo: session.repo,
+        cwd: session.cwd,
+        dismissed: session.dismissed,
+      },
+      statusChanged,
+      link: () => linkSession(session, loadProjects(cfg.specsDir)),
+    });
     return c.json({ ok: true });
   });
 
@@ -52,13 +77,20 @@ export function createApp(cfg: Config) {
     if (isLoggedIn(c, cfg.password)) return c.redirect("/");
     return c.html(readFileSync(join(PUBLIC, "login.html"), "utf8"));
   });
+  // Only ever a fragment of our own routing shape, so the redirect target is always this origin
+  // at "/" — `next` cannot name a host, a scheme, or a path. Anything else is dropped silently
+  // rather than echoed back.
+  const safeNext = (v: string | undefined): string => (v && /^#\/[\w\-./~%]*$/.test(v) ? v : "");
+
   app.post("/login", async (c) => {
     const form = await c.req.parseBody();
     if (typeof form.password === "string" && checkPassword(form.password, cfg.password)) {
       logIn(c, cfg.password);
-      return c.redirect("/");
+      return c.redirect(`/${safeNext(c.req.query("next"))}`);
     }
-    return c.redirect("/login?error=1");
+    // Keep it across a wrong password too, or the second attempt is the one that loses it.
+    const next = safeNext(c.req.query("next"));
+    return c.redirect(`/login?error=1${next ? `&next=${encodeURIComponent(next)}` : ""}`);
   });
   app.post("/logout", (c) => {
     logOut(c);
@@ -145,7 +177,10 @@ export function createApp(cfg: Config) {
       return c.json({ error: "invalid json" }, 400);
     }
     const id = Number(c.req.param("id"));
-    if (!Number.isInteger(id) || !cfg.store.job(id)) return c.json({ error: "no such job" }, 404);
+    // Bound rather than discarded: the 404 check already has to read the row, and its status is
+    // the previous status the notifier needs to tell a new failure from a re-reported one.
+    const before = Number.isInteger(id) ? cfg.store.job(id) : undefined;
+    if (!before) return c.json({ error: "no such job" }, 404);
     const status = body.status;
     if (status !== "running" && status !== "done" && status !== "failed")
       return c.json({ error: "status must be running, done or failed" }, 400);
@@ -154,6 +189,15 @@ export function createApp(cfg: Config) {
       sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
     });
     notify("jobs");
+    // Field by field for the same reason the session call site is: `JobEvent.job` is a `Pick`,
+    // which is a compile-time shape only, and the row carries `error` — runner output that can
+    // hold an absolute path, which is the one thing the notification must never contain.
+    if (job)
+      notifier.maybeSend({
+        kind: "job",
+        job: { project: job.project, feature: job.feature, command: job.command, status: job.status },
+        previousStatus: before.status,
+      });
     return c.json({ job });
   });
 
@@ -213,6 +257,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     hookToken: required("FACTORY_HOOK_TOKEN"),
     runnerToken: required("FACTORY_RUNNER_TOKEN"),
     sync,
+    notifier: notifierFromEnv(),
   });
 
   if (sync) {

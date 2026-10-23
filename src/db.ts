@@ -120,7 +120,11 @@ export class Store {
 
   // Merges an update into the session row. Fields left undefined keep their stored value;
   // a new prompt clears the previous turn's message.
-  upsert(u: SessionUpdate, now = new Date().toISOString()): void {
+  //
+  // Returns the merged row and whether the status actually changed, because that distinction is
+  // computed here and nowhere else — the notifier needs it to tell a real event from a repeated
+  // idle nudge.
+  upsert(u: SessionUpdate, now = new Date().toISOString()): { session: Session; statusChanged: boolean } {
     const existing = this.get(u.id);
     const pick = <T>(next: T | undefined, prev: T | null | undefined): T | null =>
       next !== undefined && next !== null && next !== "" ? next : (prev ?? null);
@@ -146,7 +150,9 @@ export class Store {
       updated_at: now,
       // A real status change brings a dismissed session back; a repeated nudge does not.
       dismissed: changed ? 0 : (existing?.dismissed ?? 0),
-    };
+      // `satisfies`, not an annotation: the statement below needs the inferred object type to
+      // bind it as SQL parameters.
+    } satisfies Session;
     this.db
       .prepare(
         `INSERT OR REPLACE INTO sessions
@@ -154,6 +160,7 @@ export class Store {
          VALUES (:id, :status, :status_since, :url, :cwd, :repo, :branch, :host, :feature_hint, :prompt, :message, :last_event, :started_at, :updated_at, :dismissed)`,
       )
       .run(row);
+    return { session: row, statusChanged: changed };
   }
 
   get(id: string): Session | undefined {

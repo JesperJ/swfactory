@@ -22,6 +22,18 @@
       <button class="btn primary" type="submit">Sign in</button>
     </form>
   </div>
-  <script>if (location.search.includes("error")) document.getElementById("error").hidden = false;</script>
+  <script>
+    if (location.search.includes("error")) document.getElementById("error").hidden = false;
+    // A fragment survives the 302 that sent us here, but not the form POST — the browser
+    // resolves action="/login" against this URL and drops it. So carry it in the query and let
+    // the server put it back, or a notification tapped on a logged-out phone lands on the
+    // default tab instead of the thing it was telling you about.
+    // After a wrong password the fragment is already gone from the bar, so the server hands it
+    // back in the query; on the first visit it is still a real fragment.
+    const want = new URLSearchParams(location.search).get("next") || location.hash;
+    if (/^#\/[\w\-./~%]*$/.test(want)) {
+      document.querySelector("form").action = "/login?next=" + encodeURIComponent(want);
+    }
+  </script>
 </body>
 </html>

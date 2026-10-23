@@ -475,7 +475,8 @@ async function load() {
   loading = (async () => {
     try {
       const res = await fetch("/api/state", { cache: "no-store" });
-      if (res.status === 401) return void (location.href = "/login");
+      // Carry where we were, so signing back in returns here rather than the default tab.
+      if (res.status === 401) return void (location.href = "/login" + location.hash);
       if (res.ok) {
         state = await res.json();
         render();
