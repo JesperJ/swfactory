@@ -147,9 +147,20 @@ becomes decoration. End by saying the feature is ready for `/factory review <id>
 
 1. Open the spec. Status must be `reviewing`, else say what it is and stop.
 2. Work out the round number: the next free `n` in `<project>/reviews/<NNN>-round-<n>.md`.
-3. Spawn **all three reviewers in a single message** so they run in parallel — `review-code`,
-   `review-security`, `review-ux`. Give each: the path to the spec, the feature branch, and the
-   round number. Tell each to judge against the spec's acceptance criteria.
+3. Spawn **three agents in a single message** so they run in parallel, one per reviewer in
+   `.claude/agents/`: `review-code.md`, `review-security.md`, `review-ux.md`.
+
+   Spawn them as **general-purpose** agents, and make each one's first instruction *"read
+   `.claude/agents/review-<x>.md` in full; that file is your complete instructions, follow it
+   exactly"*. Do not spawn them by agent type. Those types are only registered when the session
+   loads `.claude/agents/`, which a freshly cloned repo, a reloaded session, and
+   `/reload-skills` all fail to do — so spawning by type fails outright and the review silently
+   does not happen. Pointing a general-purpose agent at the file works either way and keeps one
+   source of truth: the reviewer definitions stay the thing being followed.
+
+   Give each the path to the spec, the feature branch and its base, the round number, the parts
+   of the diff that matter most, and how to run the repo's checks. Tell each to judge against
+   the spec's acceptance criteria.
 4. Write their findings to `<project>/reviews/<NNN>-round-<n>.md`: one section per reviewer,
    each finding keeping its blocking/minor label, file and reasoning. Keep their words; do not
    summarise away the specifics.
