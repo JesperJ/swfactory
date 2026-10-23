@@ -97,7 +97,39 @@ async function start(job: Job): Promise<void> {
   console.log(`[runner] job ${job.id}: ${commandFor(job)} in ${cwd} (tmux ${name})`);
 }
 
+// Does a tmux session by that name exist? `has-session` exits non-zero when it does not.
+export async function tmuxSessionExists(name: string): Promise<boolean> {
+  try {
+    await run("tmux", ["has-session", "-t", `=${name}`], { timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Nothing else ever closes a job: the session it started just ends. So each tick we ask the
+// dashboard which jobs it believes are running and check whether their tmux sessions are still
+// there. State lives on the dashboard rather than in this process, so a runner restart loses
+// nothing and picks the work straight back up.
+async function reconcile(): Promise<void> {
+  let running: Job[] = [];
+  try {
+    const res = await fetch(`${BASE}/api/jobs/running`, { headers: auth });
+    if (!res.ok) return;
+    running = (await res.json()).jobs ?? [];
+  } catch {
+    return; // dashboard down; the next tick will try again
+  }
+  for (const job of running) {
+    if (await tmuxSessionExists(sessionName(job))) continue;
+    console.log(`[runner] job ${job.id}: tmux session gone, marking done`);
+    await report(job.id, "done");
+  }
+}
+
 async function tick(): Promise<void> {
+  await reconcile();
+
   let job: Job | null = null;
   try {
     const res = await fetch(`${BASE}/api/jobs/next`, { headers: auth });

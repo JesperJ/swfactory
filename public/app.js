@@ -168,6 +168,18 @@ function startControl(item, { primary = false } = {}) {
   const button = (label, extraClass = "") =>
     `<button class="btn ${primary ? "primary" : ""} ${extraClass}" data-start="${esc(item.projectSlug)}/${esc(item.feature)}/${esc(item.command)}">${esc(label)}</button>`;
 
+  // A stale job has stopped blocking new work server-side, so the UI must offer the action
+  // again rather than showing a pill that never clears.
+  if (job?.stale) {
+    const why =
+      job.status === "running"
+        ? "Started, but never reported finishing. The session may have died, or no runner is watching it."
+        : "No runner picked this up.";
+    return `<div class="jobfail">
+      <p class="jobfail-why"><b>Gave up waiting.</b> ${esc(why)}</p>
+      ${button(`${item.action} it again`, "retry")}
+    </div>`;
+  }
   if (job && job.status === "failed") {
     // The store lets a failed job be queued again, so the UI must too — otherwise the one thing
     // this exists to do from a phone is unavailable for as long as the failure stays listed.

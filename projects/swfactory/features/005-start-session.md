@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: building
+status: reviewing
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -130,9 +130,9 @@ more here than the few seconds of latency it costs.
 - [x] A `failed` job shows its reason on the dashboard rather than disappearing
 - [x] systemd user unit file and the README section to install it
 - [ ] Dogfood: queue a job from the phone and watch the session appear in the Inbox
-- [ ] Round 2: the runner reconciles running jobs against tmux and reports `done` when a session exits
-- [ ] Round 2: an unfinished job older than a few hours stops blocking new work, so a dead runner cannot wedge a feature
-- [ ] Round 2: the UI offers the action again for a stale job instead of a permanent pill
+- [x] Round 2: the runner reconciles running jobs against tmux and reports `done` when a session exits
+- [x] Round 2: an unfinished job older than a few hours stops blocking new work, so a dead runner cannot wedge a feature
+- [x] Round 2: the UI offers the action again for a stale job instead of a permanent pill
 - [x] Round 1: `KIND_COMMAND.approve` queues a build for a feature at `reviewing`; it must map to `review`
 - [x] Round 1: allow `review` as a job command, or the hero button for a reviewing feature cannot work
 - [x] Round 1: a failed job blocks retry for 24h although the store would accept one
@@ -208,3 +208,16 @@ more here than the few seconds of latency it costs.
 - 2026-10-23 Escalation answered: both mechanisms, 1 and 3. The runner reconciles against tmux
   so a finished session closes its job; the guard gains a time bound so a dead runner cannot
   wedge a feature permanently. Neither protects against the other's failure, which is why both.
+- 2026-10-23 Round 2 fixes built. The runner now reconciles: each tick it asks the dashboard
+  which jobs it believes are running and checks whether their tmux sessions still exist,
+  reporting `done` for any that have gone. The state lives on the dashboard rather than in the
+  runner process, so a runner restart loses nothing.
+  Verified against a real tmux session rather than a mock: with the session alive the job stayed
+  `running`; killed, the next pass reported it done and the running list emptied.
+  The backstop is `STALE_JOB_HOURS = 6`. An unfinished job older than that stops blocking new
+  work, and `listJobs` marks exactly those jobs `stale` so the UI offers the action again
+  instead of a pill that never clears — one rule, applied in both places, with a test asserting
+  the two agree.
+  Also replaced the error text on the two cancelled jobs: I had written code-review jargon about
+  a "superseded kind-to-command mapping" into a field the dashboard shows verbatim.
+  51 tests, typecheck clean, shoot clean.

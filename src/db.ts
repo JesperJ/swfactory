@@ -52,6 +52,14 @@ export type JobCommand = (typeof JOB_COMMANDS)[number];
 export type JobStatus = "queued" | "claimed" | "running" | "failed" | "done";
 const UNFINISHED: JobStatus[] = ["queued", "claimed", "running"];
 
+// A job that has not reached a terminal state in this long has lost its runner — it was never
+// claimed, or the session died without reporting. Round 2 found that an unfinished job blocked
+// every future tap for its feature forever, turning "two taps don't start two sessions" into
+// "no tap ever starts one again". Past this age a job stops blocking and the UI offers the
+// action again. This is the backstop; the runner reconciling against tmux is the real fix, and
+// neither covers the other's failure.
+export const STALE_JOB_HOURS = 6;
+
 export interface Job {
   id: number;
   project: string;
@@ -170,12 +178,13 @@ export class Store {
   // work queued. The guard lives here rather than in the UI because the UI is the thing that
   // gets tapped twice on a slow connection.
   enqueue(job: { project: string; feature: string | null; command: JobCommand }, now = new Date().toISOString()): { job: Job; created: boolean } {
+    const fresh = new Date(new Date(now).getTime() - STALE_JOB_HOURS * 3600_000).toISOString();
     const existing = this.db
       .prepare(
         `SELECT * FROM jobs WHERE project = ? AND feature IS ? AND status IN (${UNFINISHED.map(() => "?").join(",")})
-         ORDER BY created_at LIMIT 1`,
+         AND created_at >= ? ORDER BY created_at LIMIT 1`,
       )
-      .get(job.project, job.feature, ...UNFINISHED) as Job | undefined;
+      .get(job.project, job.feature, ...UNFINISHED, fresh) as Job | undefined;
     if (existing) return { job: existing, created: false };
 
     const id = this.db
@@ -217,15 +226,30 @@ export class Store {
     return this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as Job | undefined;
   }
 
+  // Jobs the runner believes it started. It reconciles these against tmux each tick, because
+  // nothing else ever tells a job it finished: the session ends without reporting back.
+  listRunning(): Job[] {
+    return this.db
+      .prepare("SELECT * FROM jobs WHERE status = 'running' ORDER BY claimed_at")
+      .all() as unknown as Job[];
+  }
+
   // Everything unfinished, plus anything that finished in the last `hours` — so a failure stays
   // visible long enough to be read rather than vanishing the moment it happens.
-  listJobs(hours = 24): Job[] {
-    const since = new Date(Date.now() - hours * 3600_000).toISOString();
-    return this.db
+  // `stale` is derived, not stored: it is the same age rule `enqueue` applies, so the UI can
+  // offer the action again on exactly the jobs that have stopped blocking it.
+  listJobs(hours = 24, now = new Date()): (Job & { stale: boolean })[] {
+    const since = new Date(now.getTime() - hours * 3600_000).toISOString();
+    const fresh = new Date(now.getTime() - STALE_JOB_HOURS * 3600_000).toISOString();
+    const rows = this.db
       .prepare(
         `SELECT * FROM jobs WHERE status IN (${UNFINISHED.map(() => "?").join(",")}) OR finished_at >= ?
          ORDER BY created_at DESC`,
       )
       .all(...UNFINISHED, since) as unknown as Job[];
+    return rows.map((j) => ({
+      ...j,
+      stale: (UNFINISHED as string[]).includes(j.status) && j.created_at < fresh,
+    }));
   }
 }

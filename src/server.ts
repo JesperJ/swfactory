@@ -130,6 +130,8 @@ export function createApp(cfg: Config) {
     return c.json({ job, created }, created ? 201 : 200);
   });
 
+  app.get("/api/jobs/running", requireBearer(cfg.runnerToken), (c) => c.json({ jobs: cfg.store.listRunning() }));
+
   app.get("/api/jobs/next", requireBearer(cfg.runnerToken), (c) => {
     const job = cfg.store.claimNext();
     return c.json({ job: job ?? null });
