@@ -13,6 +13,7 @@ export type SessionStatus = "working" | "your_turn" | "needs_you" | "ended";
 export interface Session {
   id: string;
   status: SessionStatus;
+  status_since: string; // when it last *changed* status — idle nudges don't move this
   url: string | null;
   cwd: string | null;
   repo: string | null;
@@ -61,6 +62,12 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS sessions_updated ON sessions (updated_at);
     `);
+    // Added later; older databases backfill from updated_at.
+    const cols = this.db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "status_since")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN status_since TEXT");
+      this.db.exec("UPDATE sessions SET status_since = updated_at WHERE status_since IS NULL");
+    }
   }
 
   // Merges an update into the session row. Fields left undefined keep their stored value;
@@ -69,9 +76,15 @@ export class Store {
     const existing = this.get(u.id);
     const pick = <T>(next: T | undefined, prev: T | null | undefined): T | null =>
       next !== undefined && next !== null && next !== "" ? next : (prev ?? null);
+    const status = u.status ?? existing?.status ?? "your_turn";
+    // Claude Code repeats idle notifications while a session waits. Those restate the same
+    // status rather than reporting anything new, so they must not revive a dismissed session
+    // or reset the clock that ages it out of the inbox. Only a real change does that.
+    const changed = !existing || existing.status !== status;
     const row = {
       id: u.id,
-      status: u.status ?? existing?.status ?? "your_turn",
+      status,
+      status_since: changed ? now : existing.status_since,
       url: pick(u.url, existing?.url),
       cwd: pick(u.cwd, existing?.cwd),
       repo: pick(u.repo, existing?.repo),
@@ -83,14 +96,14 @@ export class Store {
       last_event: u.event,
       started_at: existing?.started_at ?? now,
       updated_at: now,
-      // Any new activity brings a dismissed session back.
-      dismissed: 0,
+      // A real status change brings a dismissed session back; a repeated nudge does not.
+      dismissed: changed ? 0 : (existing?.dismissed ?? 0),
     };
     this.db
       .prepare(
         `INSERT OR REPLACE INTO sessions
-         (id, status, url, cwd, repo, branch, host, feature_hint, prompt, message, last_event, started_at, updated_at, dismissed)
-         VALUES (:id, :status, :url, :cwd, :repo, :branch, :host, :feature_hint, :prompt, :message, :last_event, :started_at, :updated_at, :dismissed)`,
+         (id, status, status_since, url, cwd, repo, branch, host, feature_hint, prompt, message, last_event, started_at, updated_at, dismissed)
+         VALUES (:id, :status, :status_since, :url, :cwd, :repo, :branch, :host, :feature_hint, :prompt, :message, :last_event, :started_at, :updated_at, :dismissed)`,
       )
       .run(row);
   }

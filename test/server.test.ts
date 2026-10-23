@@ -98,3 +98,35 @@ test("install-hooks merges idempotently and keeps unrelated hooks", () => {
   for (const e of EVENTS) assert.ok(twice.hooks![e].some((h) => h.hooks[0].command.includes("factory-report.sh")));
   assert.equal(twice.model, "x");
 });
+
+test("a repeated idle nudge neither revives a dismissed session nor resets its clock", async () => {
+  const store = new Store(":memory:");
+  const { app } = createApp({ specsDir: SPECS, store, password: "pw", hookToken: "tok" });
+  const cookie = await login(app);
+  const idle = {
+    session_id: "s9",
+    hook_event_name: "Notification",
+    notification_type: "idle_prompt",
+    message: "Claude is waiting for your input",
+  };
+
+  await hook(app, idle);
+  const first = store.get("s9")!;
+  assert.equal(first.status, "your_turn");
+
+  // You deal with it and dismiss the card.
+  await app.request("/api/sessions/s9/dismiss", { method: "POST", headers: { cookie } });
+  assert.equal(store.get("s9")!.dismissed, 1);
+
+  // Claude nudges again a minute later. The card must stay gone and the clock must not move.
+  await hook(app, idle);
+  const after = store.get("s9")!;
+  assert.equal(after.dismissed, 1, "an idle nudge must not revive a dismissed session");
+  assert.equal(after.status_since, first.status_since, "an idle nudge must not reset the clock");
+  assert.equal((await (await app.request("/api/state", { headers: { cookie } })).json()).sessions.length, 0);
+
+  // Real new activity does bring it back.
+  await hook(app, { session_id: "s9", hook_event_name: "UserPromptSubmit", prompt: "carry on" });
+  assert.equal(store.get("s9")!.dismissed, 0);
+  assert.notEqual(store.get("s9")!.status_since, first.status_since);
+});

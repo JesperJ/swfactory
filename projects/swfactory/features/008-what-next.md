@@ -55,3 +55,5 @@ alternatives, each one line.
   default view. 9 ranking tests, typecheck clean. Added `blocked:` frontmatter and a parsed
   `lastLog` date so stalls are detectable. Not verified visually on a phone — no browser
   automation on this machine.
+- 2026-10-23 Phone check: layout good, but the bottom bar wrapped to a second row once a
+  fourth tab existed — it was hardcoded to 3 columns. Now one row at any tab count.

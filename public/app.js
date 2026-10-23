@@ -57,7 +57,7 @@ function liveSessions() {
 function inboxSessions() {
   const now = Date.now();
   return liveSessions()
-    .filter((s) => s.status !== "your_turn" || now - new Date(s.updated_at).getTime() < INBOX_TURN_MS)
+    .filter((s) => s.status !== "your_turn" || now - new Date(s.status_since ?? s.updated_at).getTime() < INBOX_TURN_MS)
     .sort((a, b) => SESSION_RANK[a.status] - SESSION_RANK[b.status] || b.updated_at.localeCompare(a.updated_at));
 }
 
@@ -140,7 +140,7 @@ function sessionCard(s, { compact = false } = {}) {
       ${s.host ? `<span class="tag">${esc(s.host)}</span>` : ""}
     </div>
     <div class="actions">
-      ${s.url ? `<a class="btn primary" href="${esc(s.url)}" target="_blank" rel="noopener">Open session ${icons.open}</a>` : ""}
+      ${s.url ? `<a class="btn primary" href="${esc(s.url)}" target="_blank" rel="noopener" data-seen="${esc(s.id)}">Open session ${icons.open}</a>` : ""}
       <button class="btn" data-dismiss="${esc(s.id)}" aria-label="Dismiss session" title="Dismiss">${icons.x}${s.url ? "" : " Dismiss"}</button>
     </div>
   </article>`;
@@ -167,7 +167,7 @@ function renderNext() {
         <h2 class="hero-title">${esc(top.action)} ${esc(top.title)}</h2>
         <p class="hero-why">${esc(top.reason)}</p>
         <div class="actions">
-          ${top.url ? `<a class="btn primary" href="${esc(top.url)}" target="_blank" rel="noopener">Open session ${icons.open}</a>` : ""}
+          ${top.url ? `<a class="btn primary" href="${esc(top.url)}" target="_blank" rel="noopener" data-seen="${esc(top.sessionId)}">Open session ${icons.open}</a>` : ""}
           ${link(top) ? `<a class="btn ${top.url ? "" : "primary"}" href="${link(top)}">Open spec</a>` : ""}
         </div>
       </article>`
@@ -450,6 +450,13 @@ function connect() {
 
 // ---------- events ----------
 document.addEventListener("click", async (e) => {
+  // Opening a session is acting on it, so the notification clears itself. Any later status
+  // change on that session brings it back; a repeated idle nudge does not.
+  const seen = e.target.closest("[data-seen]");
+  if (seen) {
+    fetch(`/api/sessions/${encodeURIComponent(seen.dataset.seen)}/dismiss`, { method: "POST" }).then(load);
+    return;
+  }
   const t = e.target.closest("[data-doc],[data-dismiss],[data-filter],[data-toggle-done]");
   if (!t) return;
   if (t.dataset.doc) {

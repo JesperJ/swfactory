@@ -66,7 +66,7 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
   // Sessions waiting on a human.
   for (const s of sessions) {
     if (s.status !== "needs_you" && s.status !== "your_turn") continue;
-    if (s.status === "your_turn" && now.getTime() - new Date(s.updated_at).getTime() > REVIEW_WINDOW_MS) continue;
+    if (s.status === "your_turn" && now.getTime() - new Date(s.status_since ?? s.updated_at).getTime() > REVIEW_WINDOW_MS) continue;
     const p = projectOf(s.project);
     const f = featureOf(p, s.feature);
     items.push({

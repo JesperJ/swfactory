@@ -39,6 +39,7 @@ function session(over: Partial<LinkedSession> & { id: string }): LinkedSession {
     started_at: NOW.toISOString(),
     updated_at: NOW.toISOString(),
     dismissed: 0,
+    status_since: NOW.toISOString(),
     project: null,
     feature: null,
     ...over,
@@ -113,7 +114,8 @@ test("paused projects and done features are skipped", () => {
 });
 
 test("a long-finished session stops being urgent", () => {
-  const s = session({ id: "s1", status: "your_turn", project: "shop", updated_at: new Date(NOW.getTime() - 72 * 3600_000).toISOString() });
+  const old = new Date(NOW.getTime() - 72 * 3600_000).toISOString();
+  const s = session({ id: "s1", status: "your_turn", project: "shop", updated_at: old, status_since: old });
   assert.deepEqual(rankNext([project("shop", [])], [s], NOW), []);
 });
 

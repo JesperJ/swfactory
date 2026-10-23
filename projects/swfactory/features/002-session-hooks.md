@@ -28,3 +28,8 @@ The dashboard links the session to a project (git remote) and feature (branch na
 
 ## Log
 - 2026-10-23 First version.
+- 2026-10-23 Fixed notifications that never cleared. Claude Code repeats idle notifications
+  while a session waits; each one was refreshing `updated_at` (so the inbox window never
+  expired) and resetting `dismissed` to 0 (so dismissed cards came back). Sessions now carry
+  `status_since`, set only when the status actually changes, and a repeated nudge no longer
+  revives a dismissed card. Opening a session from the dashboard now clears it too.
