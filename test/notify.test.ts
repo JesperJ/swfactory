@@ -119,3 +119,102 @@ test("done, running and a re-reported failure produce nothing", () => {
   assert.equal(notificationFor(job({ status: "running" }), BASE), null);
   assert.equal(notificationFor(job({}, "failed"), BASE), null, "a status it already had is not a new failure");
 });
+
+// --- sending ----------------------------------------------------------------
+// Everything below injects `fetch` or a stub sender; no test here opens a socket.
+
+import { Notifier, ntfySender, fromEnv, type Sender, type Notification } from "../src/notify.ts";
+
+function spy(): Sender & { sent: Notification[] } {
+  const sent: Notification[] = [];
+  return { sent, async send(n) { sent.push(n); } };
+}
+
+test("unconfigured, fromEnv sends nothing", () => {
+  assert.equal(fromEnv({}).enabled, false);
+  assert.equal(fromEnv({ NTFY_TOPIC: "   " }).enabled, false, "whitespace is not a topic");
+  assert.equal(fromEnv({ NTFY_TOPIC: "swf-abc123" }).enabled, true);
+});
+
+test("fromEnv takes the click target from FACTORY_PUBLIC_URL", () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const topic = "swf-abc123";
+  const sender = ntfySender({
+    topic,
+    fetch: (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof globalThis.fetch,
+  });
+  new Notifier({ sender, baseUrl: BASE }).maybeSend(session());
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://ntfy.sh", "the default server is hosted ntfy.sh");
+  const body = JSON.parse(String(calls[0].init.body));
+  assert.equal(body.topic, topic);
+  assert.equal(body.click, `${BASE}/#/inbox`);
+  assert.match(body.title, /swfactory/);
+  assert.ok(calls[0].init.signal, "the sender must carry its own deadline");
+});
+
+test("NTFY_SERVER overrides the host, trailing slash and all", async () => {
+  let seen = "";
+  const sender = ntfySender({
+    topic: "t",
+    server: "https://ntfy.example.com/",
+    fetch: (async (url: string) => {
+      seen = url;
+      return new Response("ok");
+    }) as unknown as typeof globalThis.fetch,
+  });
+  await sender.send({ title: "t", body: "b" });
+  assert.equal(seen, "https://ntfy.example.com");
+});
+
+test("a non-2xx from ntfy is an error the sender raises, for the notifier to log", async () => {
+  const sender = ntfySender({
+    topic: "t",
+    fetch: (async () => new Response("nope", { status: 429 })) as unknown as typeof globalThis.fetch,
+  });
+  await assert.rejects(() => sender.send({ title: "t", body: "b" }), /429/);
+});
+
+test("the sender gives up rather than holding a socket open forever", async () => {
+  // AbortSignal.timeout uses an unref'd timer, so with nothing else pending the test runner's
+  // event loop drains before it can fire.
+  const keepAlive = setTimeout(() => {}, 1_000);
+  const sender = ntfySender({
+    topic: "t",
+    timeoutMs: 20,
+    fetch: ((_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as unknown as typeof globalThis.fetch,
+  });
+  await assert.rejects(() => sender.send({ title: "t", body: "b" }));
+  clearTimeout(keepAlive);
+});
+
+test("maybeSend never throws, however the sender fails", async () => {
+  const logged: string[] = [];
+  const log = (m: string) => logged.push(m);
+
+  const throws: Sender = { send() { throw new Error("sync boom"); } };
+  new Notifier({ sender: throws, baseUrl: BASE, log }).maybeSend(session());
+
+  const rejects: Sender = { send: async () => { throw new Error("async boom"); } };
+  new Notifier({ sender: rejects, baseUrl: BASE, log }).maybeSend(session());
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(logged.length, 2, `both failures must be logged, not raised: ${logged.join(" | ")}`);
+  assert.match(logged.join(" "), /sync boom/);
+  assert.match(logged.join(" "), /async boom/);
+});
+
+test("the notifier applies the same rules as notificationFor", () => {
+  const s = spy();
+  const n = new Notifier({ sender: s, baseUrl: BASE });
+  n.maybeSend(session({ status: "your_turn" }));
+  n.maybeSend(session({}, { statusChanged: false }));
+  n.maybeSend(job({ status: "done" }));
+  assert.equal(s.sent.length, 0);
+  n.maybeSend(job());
+  assert.equal(s.sent.length, 1);
+});

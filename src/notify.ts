@@ -59,8 +59,14 @@ function repoLabel(repo: string | null | undefined): string | null {
   return clean(last);
 }
 
+// Config, not notification text, so it is trimmed rather than clipped to a phone-sized length.
+function trimmed(v: string | null | undefined): string | null {
+  const s = v?.trim();
+  return s ? s : null;
+}
+
 function inboxUrl(baseUrl: string | null | undefined): string | undefined {
-  const base = clean(baseUrl)?.replace(/\/+$/, "");
+  const base = trimmed(baseUrl)?.replace(/\/+$/, "");
   return base ? `${base}/#/inbox` : undefined;
 }
 
@@ -100,4 +106,96 @@ function forJob(e: JobEvent, baseUrl?: string | null): Notification | null {
     body: `/factory ${e.job.command} did not finish`,
     click: inboxUrl(baseUrl),
   };
+}
+
+// --- sending ----------------------------------------------------------------
+
+// One method, so a Web Push sender can sit beside the ntfy one later without any of the rules
+// above changing. (The plan called this interface `Notifier`; that name went to the thing the
+// endpoints hold, below, because the two need separate names.)
+export interface Sender {
+  send(n: Notification): Promise<void>;
+}
+
+const NTFY_SERVER = "https://ntfy.sh";
+const NTFY_TIMEOUT_MS = 5_000;
+
+// ntfy's JSON publish endpoint rather than its header-per-field form: a project or host name
+// with a non-ASCII character in it would need RFC 2047 encoding in a header, and needs nothing
+// here. `fetch` is injectable so the request shape can be tested without a network.
+export function ntfySender(cfg: {
+  topic: string;
+  server?: string | null;
+  timeoutMs?: number;
+  fetch?: typeof globalThis.fetch;
+}): Sender {
+  const server = (trimmed(cfg.server) ?? NTFY_SERVER).replace(/\/+$/, "");
+  const timeoutMs = cfg.timeoutMs ?? NTFY_TIMEOUT_MS;
+  const doFetch = cfg.fetch ?? globalThis.fetch;
+  return {
+    async send(n) {
+      const res = await doFetch(server, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          topic: cfg.topic,
+          title: n.title,
+          message: n.body,
+          ...(n.click ? { click: n.click } : {}),
+        }),
+        // The sender carries its own deadline. Nothing upstream is waiting on it, but a socket
+        // that never closes would otherwise leak one handle per notification.
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) throw new Error(`ntfy responded ${res.status}`);
+    },
+  };
+}
+
+export interface NotifierOptions {
+  sender?: Sender | null;
+  baseUrl?: string | null;
+  log?: (msg: string) => void;
+}
+
+// What the endpoints hold. Unconfigured, it has no sender and sends nothing — which is how
+// "unconfigured behaves exactly as today" is achieved, rather than by scattering `if (enabled)`
+// through the endpoints.
+export class Notifier {
+  private readonly sender: Sender | null;
+  private readonly baseUrl: string | null;
+  private readonly log: (msg: string) => void;
+
+  constructor(opts: NotifierOptions = {}) {
+    this.sender = opts.sender ?? null;
+    this.baseUrl = opts.baseUrl ?? null;
+    this.log = opts.log ?? ((msg) => console.error(msg));
+  }
+
+  get enabled(): boolean {
+    return this.sender !== null;
+  }
+
+  // Fire and forget: returns nothing a request path could await, and never throws. A push to a
+  // third party must not be able to slow down, fail, or change the response of an endpoint.
+  maybeSend(event: FactoryEvent): void {
+    if (!this.sender) return;
+    try {
+      const n = notificationFor(event, this.baseUrl);
+      if (!n) return;
+      void this.sender
+        .send(n)
+        .catch((err: unknown) => this.log(`[notify] send failed: ${(err as Error).message}`));
+    } catch (err) {
+      this.log(`[notify] failed: ${(err as Error).message}`);
+    }
+  }
+}
+
+export function fromEnv(env: Record<string, string | undefined> = process.env): Notifier {
+  const topic = trimmed(env.NTFY_TOPIC);
+  return new Notifier({
+    sender: topic ? ntfySender({ topic, server: env.NTFY_SERVER }) : null,
+    baseUrl: env.FACTORY_PUBLIC_URL,
+  });
 }

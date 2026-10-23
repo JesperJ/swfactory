@@ -86,10 +86,10 @@ did not actually change, and `failed` jobs. It builds the body from project, fea
 command only, so the "no prompt text, no assistant message, no path" criterion is a property of
 the one function that writes the text rather than a rule each caller must remember.
 
-`Notifier` is an interface with one method, so a Web Push sender can sit beside the ntfy one
-later without touching the rules. `fromEnv()` returns an ntfy sender when `NTFY_TOPIC` is set
-and a no-op otherwise — that is how "unconfigured behaves exactly as today" is achieved, rather
-than by scattering `if (enabled)` through the endpoints.
+`Sender` is an interface with one method, so a Web Push sender can sit beside the ntfy one
+later without touching the rules. `fromEnv()` returns a `Notifier` carrying an ntfy sender
+when `NTFY_TOPIC` is set and none otherwise — that is how "unconfigured behaves exactly as
+today" is achieved, rather than by scattering `if (enabled)` through the endpoints.
 
 The 10-minute cooldown is a `Map<sessionId, timestamp>` inside the notifier. Deliberately in
 memory: a restart can at most allow one extra notification, which is a far smaller cost than a
@@ -122,7 +122,7 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
 - [x] `notificationFor` in `src/notify.ts`: the pure trigger rules, with tests covering every
       criterion (needs_you only, no repeat on unchanged status, dismissed produces nothing,
       failed jobs, and no prompt text or path in the body)
-- [ ] The `Notifier` interface, the ntfy sender with its own timeout, and the no-op `fromEnv`
+- [x] The `Notifier` interface, the ntfy sender with its own timeout, and the no-op `fromEnv`
       returns when `NTFY_TOPIC` is unset
 - [ ] The per-session cooldown, with a test for the flap case
 - [ ] `upsert` returns `{ session, statusChanged }`; wire `POST /api/hooks` to the notifier
