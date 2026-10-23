@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: planned
+status: building
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -140,3 +140,4 @@ more here than the few seconds of latency it costs.
   resembling a command. Recorded as `decisions/2026-10-23-runner-pulls-never-pushed-to.md`.
   A third token, `FACTORY_RUNNER_TOKEN`, keeps the comparatively exposed hook token from being
   able to make the host run anything. 10 tasks.
+- 2026-10-23 Build started on `feature/005-start-session`.
