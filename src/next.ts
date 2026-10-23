@@ -5,7 +5,7 @@
 
 import type { Session, JobCommand } from "./db.ts";
 import type { SessionLink } from "./match.ts";
-import type { Feature, Project } from "./specs.ts";
+import { FEATURE_STATUSES, type Feature, type Project } from "./specs.ts";
 
 // A session as /api/state serves it: the stored row plus the project and feature it matched.
 export type LinkedSession = Session & SessionLink;
@@ -39,6 +39,8 @@ export interface NextItem {
   project: string; // display name
   projectSlug: string;
   feature: string | null; // feature slug
+  priority: string | null; // "P1" — null for a session, which has no priority of its own
+  status: string | null; // the feature's lifecycle status; null for a session
   sessionId: string | null;
   url: string | null; // session link, when there is one
   reason: string; // why it ranks here
@@ -94,6 +96,10 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
       project: p.name,
       projectSlug: p.slug,
       feature: f?.slug ?? null,
+      // A session has no lifecycle status or priority of its own; the table leaves them blank
+      // rather than borrowing the feature's and implying the session is at that stage.
+      priority: null,
+      status: null,
       sessionId: s.id,
       url: s.url,
       reason: s.status === "needs_you" ? "a session is blocked on you" : "a session finished and wants a look",
@@ -165,6 +171,27 @@ export function featureAction(f: Feature, now = new Date()): FeatureAction | nul
   }
 }
 
+export interface LifecycleStage {
+  status: string;
+  count: number;
+}
+
+// How many features sit at each lifecycle stage right now, across active projects, in order.
+// Every stage is returned even when empty: the strip draws the shape of the process, and a
+// process that changes shape depending on where work happens to be is not a diagram of
+// anything. Pure, so the "counts sum to the features" claim is a unit test, not a screenshot.
+export function lifecycleCounts(projects: Project[]): LifecycleStage[] {
+  const counts = new Map<string, number>(FEATURE_STATUSES.map((s) => [s, 0]));
+  for (const p of projects) {
+    if (p.status !== "active") continue;
+    for (const f of p.features) counts.set(f.status, (counts.get(f.status) ?? 0) + 1);
+  }
+  // A status outside the lifecycle (a typo in a spec) is counted but shown last rather than
+  // silently dropped, so a mistake in frontmatter is visible instead of invisible.
+  const extra = [...counts.keys()].filter((s) => !(FEATURE_STATUSES as readonly string[]).includes(s));
+  return [...FEATURE_STATUSES, ...extra].map((status) => ({ status, count: counts.get(status) ?? 0 }));
+}
+
 function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
   const a = featureAction(f, now);
   if (!a) return null;
@@ -178,6 +205,8 @@ function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
     project: p.name,
     projectSlug: p.slug,
     feature: f.slug,
+    priority: f.priority,
+    status: f.status,
     sessionId: null,
     url: null,
   };
