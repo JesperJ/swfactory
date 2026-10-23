@@ -35,26 +35,31 @@ body carries only project, feature, host and the link — never prompt text, Cla
 or a filesystem path.
 
 ## Acceptance criteria
-- [ ] A session changing status to `needs_you` produces exactly one notification, naming the
+- [x] A session changing status to `needs_you` produces exactly one notification, naming the
       project, the feature (or the repo when no feature matched), and the host
-- [ ] The notification links to the dashboard and tapping it opens the inbox
-- [ ] A repeated idle `Notification` event, or any event that leaves the status unchanged,
+- [x] The notification links to the dashboard and tapping it opens the inbox
+- [x] A repeated idle `Notification` event, or any event that leaves the status unchanged,
       produces no notification
-- [ ] A session that flaps `needs_you` → `working` → `needs_you` inside the cooldown window
+- [x] A session that flaps `needs_you` → `working` → `needs_you` inside the cooldown window
       produces one notification, not two
-- [ ] A job reaching `failed` produces one notification naming the project, feature and command
-- [ ] `your_turn`, `working`, `ended`, and any session already dismissed produce nothing
-- [ ] The notification text contains no prompt text, no assistant message, and no absolute path
-- [ ] With the notifier unconfigured, every existing endpoint behaves exactly as it does today
+- [x] A job reaching `failed` produces one notification naming the project, feature and command
+- [x] `your_turn`, `working`, `ended`, and any session already dismissed produce nothing
+- [x] The notification text contains no prompt text, no assistant message, and no absolute path
+- [x] With the notifier unconfigured, every existing endpoint behaves exactly as it does today
       and `npm test` passes unchanged
-- [ ] When the notification endpoint is unreachable, slow, or returns an error, `POST /api/hooks`
+- [x] When the notification endpoint is unreachable, slow, or returns an error, `POST /api/hooks`
       and `POST /api/jobs/:id/status` still return their normal response in their normal time,
       and the failure is logged, not raised
-- [ ] Trigger rules are covered by tests that make no network calls
+- [x] Trigger rules are covered by tests that make no network calls
 - [ ] README documents the env vars and the phone-side setup, and that walkthrough was followed
       once end to end on a clean phone
+      — the README half is written; the walkthrough needs a phone, so it is unverified.
 - [ ] Verified for real: a live session hitting a permission prompt produced a notification on
       my phone, and a failed job produced one
+      — verified as far as this side goes: with a throwaway topic on real ntfy.sh, a live hook
+      and a live failed job each produced exactly one message, and polling the topic back
+      confirmed the titles, bodies and click targets, with the `working` hook producing none.
+      The phone end — subscribed app, screen waking, tapping through — is untested.
 
 ## Out of scope
 - Web Push / VAPID / service worker. Blocked on 004's HTTPS; a second sender later.
@@ -130,6 +135,7 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
 - [x] A test that both endpoints keep their response and timing when the sender throws or hangs
 - [x] `.env.example`, README and the ntfy walkthrough; record the ntfy-over-Web-Push decision
 - [ ] Dogfood: subscribe the phone, make a live session hit a permission prompt, fail a job
+      (needs Jesper's phone; the dashboard-to-ntfy half is verified)
 
 ## Log
 - 2026-10-23 Specced. Mechanism changed from Web Push to ntfy: Web Push needs a secure context
@@ -144,3 +150,13 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   Recorded `decisions/2026-10-23-ntfy-over-web-push.md`, because routing session metadata through
   a third party deserves to be findable later rather than buried in a plan. 8 tasks.
 - 2026-10-23 Building on `feature/006-push-notifications`.
+- 2026-10-23 Built. 7 of 8 tasks; 10 of 12 acceptance criteria verified. Checked against real
+  ntfy.sh on a throwaway topic: one message for a live `needs_you` hook, one for a live failed
+  job, none for `working`, and polling the topic back confirmed no prompt text, no assistant
+  message and no filesystem path reached it despite all three being planted in the payloads.
+  Endpoints answered in 5-24ms. Two criteria and the dogfood task stay unticked because they
+  need the phone. One naming deviation from the plan: the transport interface is `Sender`, since
+  `Notifier` is what the endpoints hold; plan updated. Worth knowing: `upsert` un-dismisses a
+  session on a real status change, so a dismissed session that genuinely blocks again later will
+  notify. That is the inbox's existing semantics and reads as correct — it is a new thing
+  needing you — but it is the one place the "dismissed produces nothing" rule bends.
