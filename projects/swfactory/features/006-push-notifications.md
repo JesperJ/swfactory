@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: building
+status: reviewing
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -247,3 +247,7 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   feature's current recommended action, so a build that reached `reviewing` and then failed
   offers "Retry review". That is pre-existing `startControl` behaviour in another feature's
   code, and worth its own spec rather than a drive-by here.
+  UI checked at 390px and 1280px, light and dark: 4 screenshots, no console errors, no
+  overflow, tab bar on one row. The whole logged-out round trip verified in a real browser —
+  tapping a job notification while signed out now lands on the feature with the sheet open.
+- 2026-10-23 Back to reviewing after the round 2 rework. PR #5 updated.
