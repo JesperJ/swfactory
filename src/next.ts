@@ -44,12 +44,6 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-// "github.com:you/nixos-config.git" -> "nixos-config", so an unlinked session still names itself.
-function repoName(s: LinkedSession): string {
-  const from = s.repo ?? s.cwd ?? "";
-  return from.replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).pop() || "a session";
-}
-
 export function rankNext(projects: Project[], sessions: LinkedSession[], now = new Date()): NextItem[] {
   const items: NextItem[] = [];
   const liveByFeature = new Map<string, LinkedSession>();
@@ -63,18 +57,21 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
   const featureOf = (p: Project | undefined, slug: string | null) =>
     p?.features.find((f) => f.slug === slug);
 
-  // Sessions waiting on a human.
+  // Sessions waiting on a human, but only ones doing factory work. A session in some repo the
+  // factory doesn't track is not a project decision — it belongs in the Inbox, not here.
+  // Without this the view degenerates into the session list it is supposed to replace.
   for (const s of sessions) {
     if (s.status !== "needs_you" && s.status !== "your_turn") continue;
     if (s.status === "your_turn" && now.getTime() - new Date(s.status_since ?? s.updated_at).getTime() > REVIEW_WINDOW_MS) continue;
     const p = projectOf(s.project);
+    if (!p) continue;
     const f = featureOf(p, s.feature);
     items.push({
       kind: s.status === "needs_you" ? "answer" : "review",
       action: s.status === "needs_you" ? "Answer" : "Review",
-      title: f?.title ?? p?.name ?? repoName(s),
-      project: p?.name ?? "Unlinked",
-      projectSlug: p?.slug ?? "",
+      title: f?.title ?? `${p.name} session`,
+      project: p.name,
+      projectSlug: p.slug,
       feature: f?.slug ?? null,
       sessionId: s.id,
       url: s.url,

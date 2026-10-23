@@ -119,9 +119,15 @@ test("a long-finished session stops being urgent", () => {
   assert.deepEqual(rankNext([project("shop", [])], [s], NOW), []);
 });
 
-test("an unlinked session is named after its repo, not 'a session'", () => {
+test("a session in a repo the factory does not track never reaches Next", () => {
+  // It is still visible in the Inbox; it is just not a factory decision.
   const s = session({ id: "s1", status: "needs_you", repo: "github.com:you/nixos-config.git" });
-  const [top] = rankNext([], [s], NOW);
-  assert.equal(top.title, "nixos-config");
-  assert.equal(top.project, "Unlinked");
+  assert.deepEqual(rankNext([project("shop", [])], [s], NOW), []);
+});
+
+test("a tracked session with no feature is named after its project", () => {
+  const s = session({ id: "s1", status: "needs_you", project: "shop" });
+  const [top] = rankNext([project("shop", [])], [s], NOW);
+  assert.equal(top.title, "shop session");
+  assert.equal(top.project, "shop");
 });

@@ -3,3 +3,6 @@ data/
 *.db
 *.db-*
 .env
+.devenv*
+devenv.local.nix
+.direnv

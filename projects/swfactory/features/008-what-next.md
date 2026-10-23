@@ -57,3 +57,7 @@ alternatives, each one line.
   automation on this machine.
 - 2026-10-23 Phone check: layout good, but the bottom bar wrapped to a second row once a
   fourth tab existed — it was hardcoded to 3 columns. Now one row at any tab count.
+- 2026-10-23 Fixed: Next was ranking sessions from repos the factory doesn't track, so the top
+  three suggestions were ambient Claude sessions and "Review nixos-config" appeared twice,
+  indistinguishably. It had degenerated into the session list it exists to replace. Sessions
+  now only reach Next when they belong to a tracked project; everything else stays in Inbox.
