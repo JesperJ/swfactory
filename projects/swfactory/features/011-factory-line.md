@@ -1,6 +1,6 @@
 ---
 title: The factory line
-status: building
+status: reviewing
 priority: P1
 summary: One /factory command, a review stage before done, and an approver that absorbs the decisions that don't need me.
 ---
@@ -78,7 +78,7 @@ not to remove the last decision. Merging stays mine, with the findings already a
 - [ ] Rework is capped at two rounds, then escalates
 - [ ] An escalation reaches me as one specific question, never as a list of findings
 - [ ] Nothing merges to main automatically
-- [ ] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
+- [x] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
       blocked-but-planned — and applies only what I accept
 
 ## Out of scope
@@ -133,16 +133,16 @@ ones. Worse to read, but it keeps a single set of rules about statuses and appro
 the thing that actually drifted.
 
 ## Tasks
-- [ ] Add `reviewing` to the lifecycle in `specs.ts`, `app.js`, `styles.css`, `next.ts`
-- [ ] Rank `reviewing` above `planned` in `featureEntry`, with a test
-- [ ] Write `.claude/commands/factory.md` with the sub-command sections
-- [ ] `/factory next` reads the dashboard's ranking rather than re-deriving it
-- [ ] `/factory build` ends at `reviewing`, never `done`
-- [ ] Write the three reviewer agents in `.claude/agents/`
-- [ ] `/factory review` runs them in parallel and writes `reviews/<NNN>-round-<n>.md`
-- [ ] Implement approve / rework / escalate with the two-round cap in the command
-- [ ] `/factory status` proposes a diff of stale specs and applies only what is accepted
-- [ ] Delete the five old commands; update `CLAUDE.md` and `README.md`
+- [x] Add `reviewing` to the lifecycle in `specs.ts`, `app.js`, `styles.css`, `next.ts`
+- [x] Rank `reviewing` above `planned` in `featureEntry`, with a test
+- [x] Write `.claude/commands/factory.md` with the sub-command sections
+- [x] `/factory next` reads the dashboard's ranking rather than re-deriving it
+- [x] `/factory build` ends at `reviewing`, never `done`
+- [x] Write the three reviewer agents in `.claude/agents/`
+- [x] `/factory review` runs them in parallel and writes `reviews/<NNN>-round-<n>.md`
+- [x] Implement approve / rework / escalate with the two-round cap in the command
+- [x] `/factory status` proposes a diff of stale specs and applies only what is accepted
+- [x] Delete the five old commands; update `CLAUDE.md` and `README.md`
 - [ ] Dogfood: run the line on 010 end to end and keep the findings file as the example
 
 ## Risks
@@ -157,3 +157,10 @@ the thing that actually drifted.
   `/factory` command replacing five, then the reviewers and approver. Chose a single command
   file over five because the thing that actually drifted was having rules about status and
   approval in several places.
+- 2026-10-23 Built, and the review gate immediately earned its keep: `/factory review` refused
+  because the status was still `building`, and the spec had ten completed tasks still unticked
+  because the build ticked none of them. Exactly the drift this feature exists to stop, caught
+  on its own first run.
+  Verified by test: the `reviewing` status and its ranking. Verified by inspection: the command
+  and agent prompts — prompt behaviour is proven by use, not by assertion, which is what this
+  review round is for. PR #2.
