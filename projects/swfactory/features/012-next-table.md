@@ -1,11 +1,11 @@
 ---
-title: Next as a table
+title: Next as a table, and the lifecycle made visible
 status: specced
 priority: P1
-summary: Next becomes a scannable table — project, feature, priority, what to do — instead of a hero and cards.
+summary: Next becomes a scannable table, and Projects gains a lifecycle strip showing the stages and where work sits.
 ---
 
-# Next as a table
+# Next as a table, and the lifecycle made visible
 
 ## Why
 Next currently answers one question well: what is the single most useful thing right now. That
@@ -44,6 +44,30 @@ out for the width.
 The hero goes. Its job — "here is the one thing" — is served by the first row of a table sorted
 the same way, and the space it costs is the reason only four other items fit.
 
+### The lifecycle strip
+
+Nothing in the dashboard shows the process itself. The statuses appear as coloured dots and
+words, and what they mean, what order they come in, and which command moves a feature between
+them is knowledge that lives only in `CLAUDE.md` and in my head.
+
+So: a strip across the top of **Projects** — deliberately not Next, which is about what to do
+rather than how work flows — drawing the six stages in order:
+
+```
+ idea ──▶ specced ──▶ planned ──▶ building ──▶ reviewing ──▶ done
+   4         0           1            1            2          4
+```
+
+Each stage carries the number of features sitting in it right now, across every active project,
+in the same colour that stage already uses everywhere else in the UI. A stage with nothing in it
+is dimmed rather than hidden, so the shape of the process stays constant and legible.
+
+That makes it two things at once: a diagram of how work moves, and a reading of where the work
+actually is. A pile-up at `reviewing` is visible at a glance, which no current view shows.
+
+Drawn as inline SVG, not an image file: it has to re-colour with the theme, scale to a phone,
+and show live numbers.
+
 ## Acceptance criteria
 - [ ] On desktop, Next renders a table with Do, Project, Feature, Priority, Status, Why, and an
       action cell
@@ -59,13 +83,25 @@ the same way, and the space it costs is the reason only four other items fit.
 - [ ] A queued, running, failed or stale job shows in the action cell exactly as it does now,
       including the failure reason and the retry button
 - [ ] `npm run shoot` passes: no console errors, no overflow, tab bar on one row
+- [ ] Projects shows a lifecycle strip with all six stages in order: idea, specced, planned,
+      building, reviewing, done
+- [ ] Each stage shows a live count of features in it across active projects, and the counts
+      sum to the number of features in those projects
+- [ ] A stage with no features is dimmed, not hidden — the shape of the process stays constant
+- [ ] Each stage uses the same colour that status already uses elsewhere in the UI
+- [ ] The strip is inline SVG: it re-colours in dark mode and fits a 390px screen without
+      horizontal scrolling
+- [ ] The strip appears on Projects only, never on Next
 
 ## Out of scope
 - Changing the ranking rules themselves. This is how the ranking is displayed, not what it
   decides. `featureAction` and `rankNext` are untouched.
 - Filtering by project or status. The table makes the data visible; filtering is a separate
   feature if it turns out to be needed.
-- Applying the same treatment to Inbox or Projects.
+- Applying the table treatment to Inbox. The lifecycle strip is a separate thing and does go on
+  Projects.
+- Making the lifecycle strip interactive — clicking a stage to filter. It reads; it does not
+  act. Filtering is the separate feature named above.
 - Inline editing of priority.
 
 ## Open questions
@@ -87,3 +123,8 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   one thing" when the question had become "show me everything so I can pick". Written in a git
   worktree because a build session for 006 was running in the live checkout at the time — the
   collision 005's open question predicts, met in practice for the second time today.
+- 2026-10-23 Added the lifecycle strip at the user's request. It is arguably a second feature —
+  the table is about choosing what to do, the strip is about understanding how work moves — and
+  the honest split would be 012 and 013. Kept together because both are read-only rendering of
+  data already on the client, both land in `public/`, and splitting would mean two branches
+  touching the same files within an hour of each other. Say so and it splits.
