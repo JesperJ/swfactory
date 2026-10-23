@@ -1,6 +1,6 @@
 ---
 title: Next as a table, and the lifecycle made visible
-status: building
+status: reviewing
 priority: P1
 summary: Next becomes a scannable table, and Projects gains a lifecycle strip showing the stages and where work sits.
 ---
