@@ -2,7 +2,7 @@
 title: Deploy so it's reachable from mobile
 status: building
 priority: P1
-summary: Self-hosted in Docker on D002, published through a containerised Cloudflare Tunnel.
+summary: Self-hosted in Docker at home, published through a containerised Cloudflare Tunnel.
 ---
 
 # Deploy so it's reachable from mobile
@@ -12,7 +12,7 @@ The point is checking in from my phone, and cloud sessions can only report to a 
 reachable URL.
 
 ## What
-The dashboard runs in Docker on D002 and is published through a named Cloudflare Tunnel.
+The dashboard runs in Docker on an always-on home machine and is published through a named Cloudflare Tunnel.
 `cloudflared` runs in its own container on a dedicated Docker network holding only the factory,
 so the tunnel cannot route to the LAN or to the other stacks on this host.
 
@@ -21,7 +21,7 @@ See `decisions/2026-10-23-self-host-instead-of-fly.md` for why this replaced Fly
 ## Acceptance criteria
 - [x] Dashboard reachable from my phone on the LAN
 - [ ] Dashboard reachable over HTTPS from outside the LAN
-- [ ] `cloudflared` runs in its own container and cannot reach the LAN or other stacks on D002
+- [ ] `cloudflared` runs in its own container and cannot reach the LAN or the other stacks on that host
 - [ ] Only the dashboard hostname is published; every other hostname gets a 404
 - [ ] Session data survives a container restart and a host reboot
 - [ ] Sessions started from the Claude app report in and appear in the inbox
@@ -31,7 +31,7 @@ See `decisions/2026-10-23-self-host-instead-of-fly.md` for why this replaced Fly
 
 ## Out of scope
 - Routing through the existing Traefik on this host (self-signed certs; see the decision record).
-- Making the dashboard survive D002 being asleep.
+- Making the dashboard survive the host being asleep.
 
 ## Open questions
 - Which hostname, on which Cloudflare-managed domain?
@@ -49,13 +49,13 @@ the tunnel is verified. Specs move off the baked-in image copy to either `SPECS_
 read-only GitHub token or a read-only bind mount of this repo.
 
 ## Tasks
-- [x] Build the image and run it on D002 with a persistent volume
-- [x] Install reporting hooks on D002 and verify a session appears
+- [x] Build the image and run it on the home machine with a persistent volume
+- [x] Install reporting hooks on that machine and verify a session appears
 - [ ] Create the named tunnel and its DNS record (needs a Cloudflare login)
 - [ ] Write `compose.yml`: factory + cloudflared on a dedicated network
 - [ ] Ingress: one hostname to the factory, catch-all 404
 - [ ] Verify from outside the LAN that the hostname serves the dashboard over HTTPS
-- [ ] Verify cloudflared cannot reach 192.168.1.240, 10.42.0.10 or the Traefik stack
+- [ ] Verify cloudflared cannot reach other hosts on the LAN or the other stacks on this host
 - [ ] Repoint `FACTORY_URL` at the hostname and re-run `install-hooks`
 - [ ] Set `FACTORY_URL` and `FACTORY_HOOK_TOKEN` in the cloud environment on claude.ai, and
       confirm a cloud session lands in the inbox
@@ -64,12 +64,12 @@ read-only GitHub token or a read-only bind mount of this repo.
 - [ ] Verify persistence: restart the container, reboot the host, data intact
 
 ## Log
-- 2026-10-23 Running on D002 in Docker on port 8088 with the `swfactory-data` volume.
+- 2026-10-23 Running in Docker on a local port with the `swfactory-data` volume.
   Image build verified, LAN access confirmed from mobile. Hooks installed globally and verified
   end to end (project matched by git remote, status transitions correct). Chose self-hosting
   over Fly; tunnel still to do.
-- 2026-10-23 Specs now bind-mounted read-only from the working tree at
-  `/home/jesper/code/repos/swfactory/projects`, so edits show up without rebuilding the image.
+- 2026-10-23 Specs now bind-mounted read-only from the repo working tree, so edits show up
+  without rebuilding the image.
   Verified: an edit on the host fired `change: specs` on the SSE stream and the rendered spec
   matched the file immediately. Session data survived the container being destroyed and
   replaced. Note this serves the working tree, uncommitted edits included — if the dashboard
