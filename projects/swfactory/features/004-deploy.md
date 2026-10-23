@@ -59,7 +59,7 @@ read-only GitHub token or a read-only bind mount of this repo.
 - [ ] Repoint `FACTORY_URL` at the hostname and re-run `install-hooks`
 - [ ] Set `FACTORY_URL` and `FACTORY_HOOK_TOKEN` in the cloud environment on claude.ai, and
       confirm a cloud session lands in the inbox
-- [ ] Switch specs to `SPECS_GIT_URL` or a bind mount so they update without a rebuild
+- [x] Switch specs to `SPECS_GIT_URL` or a bind mount so they update without a rebuild
 - [ ] Decide on Cloudflare Access and record the answer
 - [ ] Verify persistence: restart the container, reboot the host, data intact
 
@@ -68,3 +68,9 @@ read-only GitHub token or a read-only bind mount of this repo.
   Image build verified, LAN access confirmed from mobile. Hooks installed globally and verified
   end to end (project matched by git remote, status transitions correct). Chose self-hosting
   over Fly; tunnel still to do.
+- 2026-10-23 Specs now bind-mounted read-only from the working tree at
+  `/home/jesper/code/repos/swfactory/projects`, so edits show up without rebuilding the image.
+  Verified: an edit on the host fired `change: specs` on the SSE stream and the rendered spec
+  matched the file immediately. Session data survived the container being destroyed and
+  replaced. Note this serves the working tree, uncommitted edits included — if the dashboard
+  ever moves off this machine, switch to `SPECS_GIT_URL`.
