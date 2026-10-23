@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: building
+status: reviewing
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -156,3 +156,6 @@ more here than the few seconds of latency it costs.
   Caught while looking at the result: the `/api/*` middleware would have locked the runner out
   of its own endpoints, and the row action rendered between cards so a `Failed` pill read as
   belonging to the wrong row. Both fixed.
+- 2026-10-23 PR #3. Three criteria stay unticked — a session started into a live checkout, the
+  30s hook round trip, and the runner surviving a reboot — because none has been exercised, and
+  the first is held back by the checkout-state question above rather than by missing code.
