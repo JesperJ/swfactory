@@ -1,6 +1,6 @@
 ---
 title: Sessions report to the dashboard
-status: building
+status: done
 priority: P1
 summary: Claude Code hooks send session status (working, your turn, needs you) with a link back.
 ---
@@ -20,11 +20,6 @@ The dashboard links the session to a project (git remote) and feature (branch na
 - [x] Git credentials in the remote URL are never sent
 - [x] Hooks never slow down or fail a session when the dashboard is unreachable
 - [x] `npm run install-hooks` sets it up for a machine or a repo
-- [ ] Local Remote Control sessions get a clickable link
-
-## Open questions
-- Does Claude Code expose the Remote Control URL to hooks for local sessions? Until then,
-  `FACTORY_SESSION_URL` can be set by hand.
 
 ## Log
 - 2026-10-23 First version.
@@ -33,3 +28,7 @@ The dashboard links the session to a project (git remote) and feature (branch na
   expired) and resetting `dismissed` to 0 (so dismissed cards came back). Sessions now carry
   `status_since`, set only when the status actually changes, and a repeated nudge no longer
   revives a dismissed card. Opening a session from the dashboard now clears it too.
+- 2026-10-23 Done. Running in production: four real sessions reporting from this machine,
+  matched to projects by git remote, with credentials stripped. The missing clickable link for
+  local Remote Control sessions moved to 009 — it is a separate capability blocked upstream,
+  not unfinished work here.

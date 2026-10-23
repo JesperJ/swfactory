@@ -1,6 +1,6 @@
 ---
 title: Tell me what to work on next
-status: building
+status: done
 priority: P1
 summary: A ranked cross-project "next" view that names one thing to do, instead of a list to scan.
 ---
@@ -36,7 +36,7 @@ alternatives, each one line.
 - [x] Below it, at most 4 ranked alternatives, one line each
 - [x] Stalled `building` features surface above fresh `planned` ones
 - [x] Items blocked on someone else are labelled blocked and ranked last
-- [ ] The whole view fits a phone screen without scrolling — not yet verified on a real phone
+- [x] The whole view fits a phone screen without scrolling
 - [x] Each item links to the spec, and to a session if one is live
 - [x] Ranking is explainable — a short reason per item, e.g. "no activity for 9 days"
 
@@ -61,3 +61,5 @@ alternatives, each one line.
   three suggestions were ambient Claude sessions and "Review nixos-config" appeared twice,
   indistinguishably. It had degenerated into the session list it exists to replace. Sessions
   now only reach Next when they belong to a tracked project; everything else stays in Inbox.
+- 2026-10-23 Done. Confirmed on a real phone, and `npm run shoot` now guards overflow and tab
+  wrapping on every change.

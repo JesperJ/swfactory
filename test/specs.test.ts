@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { loadProjects, normalizeRepo, renderDoc } from "../src/specs.ts";
+import { FEATURE_STATUSES, loadProjects, normalizeRepo, renderDoc } from "../src/specs.ts";
 
 const SPECS = join(import.meta.dirname, "..", "projects");
 
@@ -21,7 +21,12 @@ test("loads the factory's own project and features", () => {
   assert.equal(p.repo, "github.com/jesperj/swfactory");
   const f = p.features.find((x) => x.id === "001");
   assert.equal(f?.slug, "001-dashboard");
-  assert.equal(f?.status, "building");
+  // Not the literal status: these specs are live and their statuses move. Assert that every
+  // feature parses into the lifecycle, which is what the dashboard and ranking depend on.
+  for (const x of p.features) {
+    assert.ok(FEATURE_STATUSES.includes(x.status as (typeof FEATURE_STATUSES)[number]), `${x.slug}: ${x.status}`);
+    assert.ok(x.title.length > 0, `${x.slug} has no title`);
+  }
 });
 
 test("renderDoc renders markdown and refuses path traversal", () => {

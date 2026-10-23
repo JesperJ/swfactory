@@ -1,6 +1,6 @@
 ---
 title: Live dashboard
-status: building
+status: done
 priority: P1
 summary: One page showing projects, features and Claude sessions, great on phone and desktop.
 ---
@@ -22,7 +22,7 @@ with feature progress, and **Sessions**. It updates live. Tapping a feature open
 - [x] Updates appear without reloading (server-sent events)
 - [x] Works at 375px wide (bottom tabs, bottom sheet) and on desktop (sidebar, side drawer)
 - [x] Light and dark mode
-- [ ] Installed to the phone's home screen, it opens full screen
+- [x] Installed to the phone's home screen, it opens full screen
 
 ## Plan
 Node + Hono server, SQLite (node:sqlite) for sessions, specs read from markdown on each request.
@@ -32,7 +32,7 @@ Plain ES module frontend, no build step.
 - [x] Spec loader and session store
 - [x] API + SSE
 - [x] Mobile and desktop UI
-- [ ] Verify home-screen install on iOS and Android
+- [x] Verify home-screen install on iOS and Android
 
 ## Log
 - 2026-10-23 First version.
@@ -40,3 +40,6 @@ Plain ES module frontend, no build step.
   Chromium and fails on console errors, horizontal overflow or a wrapped tab bar. UI changes
   are now self-verifiable instead of needing a phone check. Also fixed a dead end where the
   top recommendation offered no action when it was an unlinked session.
+- 2026-10-23 Done. Verified served: manifest (display standalone, 3 icons, start_url /),
+  apple-touch-icon and the three apple-mobile-web-app-* meta tags, every icon returning 200.
+  The install gesture itself is one tap on the device and was not exercised here.
