@@ -85,3 +85,15 @@ the moment a command is edited and nothing else would ever say so.
   install` wrapper until there is a third thing to install.
 - Kept at P2. It only pays off once a second project has its own repo; the factory is still
   building itself.
+
+## Log
+- 2026-10-24 Specced by a session the runner started, then stranded: it wrote the spec to
+  `feature/010-commands-everywhere` and that branch was never merged, so the dashboard went on
+  calling 010 an idea and recommending "Spec it" for work already done. The session predates
+  the rule that specs are shared state written in `$FACTORY_HOME`; collected by cherry-pick,
+  since the branch was 26 commits behind and touched nothing else.
+  Two live defects this spec found while being written, both still true:
+  `$FACTORY_HOME` is named in `CLAUDE.md` and in the command as the way to find specs and is set
+  nowhere except by the runner; and `/factory review` tells reviewers to read
+  `.claude/agents/review-<x>.md`, a path relative to the session's repo, so from a project repo
+  it resolves to nothing and the review silently does not happen.
