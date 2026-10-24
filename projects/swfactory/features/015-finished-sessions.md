@@ -175,3 +175,4 @@ one, and never silently.
   were left alone. The 007 and 010 sessions were ~6h idle and under the threshold, so they
   never appeared. Nothing was ended, which is the right answer for that state — and without
   the attached guard the user's own terminal would have been the first thing killed.
+- 2026-10-24 PR https://github.com/JesperJ/swfactory/pull/13. Ready for `/factory review swfactory/015`.
