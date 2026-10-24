@@ -12,7 +12,9 @@ spec's acceptance criteria**, not against your taste.
 
 1. Read the spec. Note each acceptance criterion.
 2. Read the diff: `git diff $(git merge-base HEAD main)...HEAD`.
-3. Run the repo's checks yourself — `npm test`, `npm run typecheck` — and report what they
+3. Install dependencies first if the checkout has none — a worktree starts with source only,
+   and a missing `node_modules` makes every check fail in a way that looks like broken code.
+   Then run the repo's checks yourself — `npm test`, `npm run typecheck` — and report what they
    actually print. Never assume they pass.
 4. For each criterion, decide **met**, **not met**, or **not verifiable from the diff**, and say
    why in one line, naming the file or test that settles it.

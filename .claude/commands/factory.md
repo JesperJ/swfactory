@@ -41,6 +41,14 @@ behave as `next`. Follow only the matching section below.
   this rule existed.
 - Code belongs on the feature branch in the worktree; specs belong in the specs checkout. The
   two are committed separately, in different working trees, and that is deliberate.
+- **A worktree starts with source only — no installed dependencies.** Before running tests, a
+  linter, or a type checker for the first time, check whether the project's dependencies are
+  present and install them if they are not (`npm ci`, `uv sync`, `cargo fetch` — whatever this
+  project actually uses). A first `npm test` in a fresh worktree otherwise fails with
+  `ERR_MODULE_NOT_FOUND` and looks like a broken branch rather than an empty one.
+  This lives here rather than in the runner on purpose: the runner deals in git and tmux and
+  has no business knowing which language a project is written in. The session is already in the
+  repository and can see.
 - Every sub-command that changes a spec commits it: `factory: <sub> <project>/<NNN>`.
 
 ---
@@ -139,7 +147,8 @@ with the plan, stop, update the plan in the spec, say so in one line, and carry 
    sessions to the feature. Set `status: building` and add a Log line.
 3. For each unchecked task, in order:
    - implement it, with tests for the acceptance criteria it covers;
-   - run the repo's tests, linter and type checker, and fix failures before moving on;
+   - run the repo's tests, linter and type checker, installing dependencies first if the
+     worktree has none, and fix failures before moving on;
    - tick the task in the spec and commit in the code repo, naming the task.
 4. When every task is done, check each acceptance criterion against the running code or tests.
    Tick it only if you verified it. Anything unverified stays unticked with a note saying what
