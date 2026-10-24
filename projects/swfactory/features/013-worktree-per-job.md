@@ -1,6 +1,6 @@
 ---
 title: A worktree per job
-status: planned
+status: building
 priority: P1
 summary: The runner builds in its own git worktree instead of the shared checkout, so jobs can't collide with each other or with me.
 ---
@@ -176,3 +176,4 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   fallback when creating a worktree fails, which is today's behaviour and today's bug.
   Tests use real git repositories rather than mocks: worktree semantics are exactly what a mock
   would get wrong. 8 tasks.
+- 2026-10-24 Build started on `feature/013-worktree-per-job`.
