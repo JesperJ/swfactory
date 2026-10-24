@@ -162,7 +162,10 @@ const JOB_LABEL = { queued: "Queued", claimed: "Starting", running: "Started", f
 
 // The button that queues work, or the state of the job already queued for it.
 // `item` needs { projectSlug, feature, command, action, blocked }.
-function startControl(item, { primary = false } = {}) {
+// `withReason` controls where a failure explains itself. In the table the reason belongs in the
+// Why column — prose in a narrow action cell was what made failure rows three times the height
+// of a normal one. In card contexts there is no Why column, so the block carries its own.
+function startControl(item, { primary = false, withReason = true } = {}) {
   if (!item?.command || !item.feature || item.blocked) return "";
   const job = jobFor(item.projectSlug, item.feature);
   const button = (label, extraClass = "") =>
@@ -184,9 +187,11 @@ function startControl(item, { primary = false } = {}) {
     // The store lets a failed job be queued again, so the UI must too — otherwise the one thing
     // this exists to do from a phone is unavailable for as long as the failure stays listed.
     // The reason goes in visible text: a title attribute does not exist on touch.
+    const retry = button(`Retry ${item.action.toLowerCase()}`, "retry");
+    if (!withReason) return retry;
     return `<div class="jobfail">
       <p class="jobfail-why"><b>Failed.</b> ${esc(job.error ?? "no reason given")}</p>
-      ${button(`Retry ${item.action.toLowerCase()}`, "retry")}
+      ${retry}
     </div>`;
   }
   if (job && job.status !== "done") return `<span class="pill working">${JOB_LABEL[job.status] ?? job.status}</span>`;
@@ -245,11 +250,17 @@ function renderNext() {
   // One row markup for both layouts. Which one shows is a media query's decision, so the two
   // can never disagree about the viewport the way two JS branches could.
   const row = (i) => {
-    const control = startControl(i);
+    const control = startControl(i, { withReason: false });
+    // A failed job replaces the ranking reason: why it is not moving beats why it ranked here.
+    const job = i.feature ? jobFor(i.projectSlug, i.feature) : null;
+    const why =
+      job?.status === "failed"
+        ? `<b class="failed">Failed.</b> ${esc(job.error ?? "no reason given")}`
+        : esc(i.reason);
     const open = i.url
       ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener" data-seen="${esc(i.sessionId)}">Open ${icons.open}</a>`
       : "";
-    return `<tr class="ntrow k-${esc(i.kind)}" data-open="${esc(link(i) ?? "#/inbox")}">
+    return `<tr class="ntrow k-${esc(i.kind)}" data-open="${esc(link(i) ?? "#/inbox")}" tabindex="0" role="link" aria-label="${esc(`${i.action} ${i.title}`)}">
       <td class="c-do"><span class="dot k-${esc(i.kind)}"></span><b>${esc(i.action)}</b></td>
       <td class="c-project">${esc(i.project)}</td>
       <td class="c-feature">
@@ -259,7 +270,7 @@ function renderNext() {
       </td>
       <td class="c-prio">${i.priority ? `<span class="prio p-${esc(i.priority)}">${esc(i.priority)}</span>` : ""}</td>
       <td class="c-status">${i.status ? `<span class="fstatus"><span class="status-dot ${statusClass(i.status)}"></span>${esc(i.status)}</span>` : ""}</td>
-      <td class="c-why">${esc(i.reason)}</td>
+      <td class="c-why" title="${job?.status === "failed" ? esc(job.error ?? "") : esc(i.reason)}">${why}</td>
       <td class="c-action">${open}${control}</td>
     </tr>`;
   };
@@ -361,7 +372,7 @@ function lifecycleStrip() {
   const stages = state.lifecycle ?? [];
   if (!stages.length) return "";
   const arrow = `<svg class="lc-arrow" viewBox="0 0 12 8" aria-hidden="true"><path d="M0 4h9M6 1l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  return `<div class="lifecycle" role="img" aria-label="Lifecycle: ${stages.map((s) => `${s.count} ${s.status}`).join(", ")}">
+  return `<div class="lifecycle" role="img" aria-label="Lifecycle: ${esc(stages.map((s) => `${s.count} ${s.status}`).join(", "))}">
     ${stages
       .map(
         (s, n) => `${n ? arrow : ""}<div class="lc-stage ${s.count ? "" : "lc-empty"}">
@@ -631,7 +642,16 @@ document.addEventListener("click", async (e) => {
 
 $("#sheet-close").addEventListener("click", closeSheet);
 $("#scrim").addEventListener("click", closeSheet);
-document.addEventListener("keydown", (e) => e.key === "Escape" && sheetKey && closeSheet());
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && sheetKey) return closeSheet();
+  // A table row is not a link, so it gets the behaviour of one: Enter and Space open the spec.
+  // Before the table, each row was an <a> and this worked for free; the rewrite lost it.
+  const row = e.target.closest?.("tr[data-open]");
+  if (row && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    row.click();
+  }
+});
 
 $("#sync").addEventListener("click", async () => {
   const btn = $("#sync");

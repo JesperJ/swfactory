@@ -71,7 +71,10 @@ and show live numbers.
 ## Acceptance criteria
 - [x] On desktop, Next renders a table with Do, Project, Feature, Priority, Status, Why, and an
       action cell
-- [ ] At least 12 rows fit on a 1366×860 screen without scrolling — **not met: 7 fit today**
+- [x] A row without a failure block is no taller than ~60px at 1366px wide
+- [x] A failure block adds no more than one row's worth of height to its row
+- [x] No horizontal overflow at any width from 320px to 1920px, not just the two `shoot`
+      photographs
 - [x] Priority is visible on every row, on both desktop and phone
 - [x] The project is a column on desktop, not a subtitle
 - [x] Clicking a row opens that feature's spec; the action button still queues its job and is
@@ -153,6 +156,16 @@ most likely to come back from review, so it gets screenshotted at 390px before t
 is called done.
 
 ## Tasks
+- [x] Round 1: reframe the density criterion — row height, not a row count hostage to the day's
+      failure count (done: the criteria above)
+- [x] Round 1: the retry button sits inline with the reason rather than on its own line
+- [x] Round 1: trim normal row height to ~60px without losing a column
+- [x] Round 1: the table and the sidebar must not switch at the same width — 935px of content
+      in a 900px window today
+- [x] Round 1: `esc()` the lifecycle strip's `aria-label` — the one unescaped interpolation
+- [x] Round 1: give `.prio.p-P3` a colour so P3 is not identical to no priority
+- [x] Round 1: the row's open-spec affordance must be keyboard-reachable
+- [x] Round 1: `shoot` checks more widths, and against a state that contains a failed job
 - [x] `featureAction` and `NextItem` carry `priority` and `status`; test that a ranked item
       exposes the same priority as its spec
 - [x] `lifecycleCounts`, pure, with tests for ordering, empty stages and the sum
@@ -246,3 +259,19 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   the lifecycle strip's `aria-label` (the only unescaped interpolation in the file), a colour
   for `.prio.p-P3`, keyboard reachability for the row's open-spec affordance, and widening
   `shoot` beyond two widths.
+- 2026-10-24 Round 1 reworked. The density criterion is reframed as the review proposed — a row
+  without a failure block ≤60px, a failure block adding no more than one row's height, and no
+  overflow at any width — because a fixed row count on a fixed viewport was measuring the day's
+  incident count rather than the table's design.
+  The structural fix was moving the failure reason out of the action cell and into the Why
+  column, where prose belongs. That alone took failure rows from 150px to a normal row's height;
+  shrinking every row to chase the old number would have cost a column and fixed nothing.
+  Rows are 51px. The table now switches at 1100px rather than 900px, so it no longer turns on at
+  exactly the width where the sidebar leaves it least room.
+  Also: `esc()` on the lifecycle strip's `aria-label`, a colour for `.prio.p-P3`, and rows are
+  keyboard-reachable again — `tabindex`, `role="link"`, Enter and Space, and a visible focus
+  ring. The table rewrite had quietly dropped the focusability every row had as an `<a>`.
+  `shoot` now checks overflow and row height at 15 widths instead of photographing two. It
+  earned itself immediately: it caught three regressions my own first fix introduced, including
+  one where a `nowrap` I added forced the shell's grid column 528px past the viewport — found
+  by measuring which element was wide, not by guessing. 123 tests, typecheck clean.

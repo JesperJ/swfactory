@@ -41,6 +41,11 @@ const SHOTS: Shot[] = [
   { name: "inbox-desktop", width: 1366, height: 860, dark: true, steps: ['.side-link[href="#/inbox"]'] },
 ];
 
+// Overflow is checked at far more widths than are photographed. 012 shipped a layout that
+// broke at exactly 900px — where the sidebar appears and takes 248px — and neither of the two
+// photographed widths came near it. Screenshots are for looking at; this list is for catching.
+const OVERFLOW_WIDTHS = [320, 375, 390, 414, 600, 768, 820, 899, 900, 1024, 1099, 1100, 1280, 1366, 1920];
+
 async function shoot(b: Browser, s: Shot, problems: string[]) {
   const phone = s.width < 500;
   const ctx = await b.newContext({
@@ -78,6 +83,33 @@ async function shoot(b: Browser, s: Shot, problems: string[]) {
   await ctx.close();
 }
 
+// Walks the widths and reports any that overflow, plus the tallest row — the two numbers 012's
+// density criteria are written against. One page, resized, so this costs seconds not minutes.
+async function sweepWidths(b: Browser, problems: string[]) {
+  const ctx = await b.newContext({ viewport: { width: 1366, height: 860 } });
+  const p = await ctx.newPage();
+  await p.goto(`${BASE}/login`);
+  await p.fill("#password", PASSWORD);
+  await Promise.all([p.waitForURL(`${BASE}/`), p.click("button[type=submit]")]);
+  await p.waitForSelector(".nexttable, .card, .empty");
+
+  for (const width of OVERFLOW_WIDTHS) {
+    await p.setViewportSize({ width, height: 860 });
+    await p.waitForTimeout(120);
+    const r = await p.evaluate(() => ({
+      over: document.documentElement.scrollWidth - window.innerWidth,
+      tallest: Math.max(0, ...[...document.querySelectorAll(".nexttable tbody tr")].map((t) => Math.round(t.getBoundingClientRect().height))),
+      plain: Math.max(0, ...[...document.querySelectorAll(".nexttable tbody tr")].filter((t) => !t.querySelector(".jobfail")).map((t) => Math.round(t.getBoundingClientRect().height))),
+    }));
+    if (r.over > 0) problems.push(`width ${width}: horizontal overflow by ${r.over}px`);
+    // Only meaningful where the table is actually a table; the stacked layout is taller by design.
+    if (width >= 1100 && r.plain > 60) problems.push(`width ${width}: a row with no failure block is ${r.plain}px, over the 60px the spec asks for`);
+    if (width >= 1100 && r.plain && r.tallest > r.plain * 2)
+      problems.push(`width ${width}: a failure row is ${r.tallest}px against a plain row's ${r.plain}px — more than one row's worth of extra height`);
+  }
+  await ctx.close();
+}
+
 const exe = chromiumPath();
 if (!exe) {
   console.error("No chromium found. Run inside: nix shell nixpkgs#chromium --command npm run shoot");
@@ -92,9 +124,10 @@ mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: exe });
 const problems: string[] = [];
 for (const s of SHOTS) await shoot(browser, s, problems);
+await sweepWidths(browser, problems);
 await browser.close();
 
-console.log(`${SHOTS.length} screenshots in ${OUT}`);
+console.log(`${SHOTS.length} screenshots in ${OUT}, overflow checked at ${OVERFLOW_WIDTHS.length} widths`);
 if (problems.length) {
   console.error(`\n${problems.length} problem(s):`);
   for (const p of problems) console.error(`  ${p}`);
