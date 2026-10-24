@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -17,6 +17,9 @@ import { Notifier, fromEnv as notifierFromEnv } from "./notify.ts";
 
 const ROOT = resolve(fileURLToPath(import.meta.url), "../..");
 const PUBLIC = join(ROOT, "public");
+// The files whose staleness this is all about. index.html is served by its own route, which
+// sets the same headers, so it is deliberately not in here.
+const ASSET_RE = /\.(js|css|webmanifest)$/;
 
 export interface Config {
   specsDir: string;
@@ -35,6 +38,28 @@ export function createApp(cfg: Config) {
   // Computed once: the files cannot change under a running container, so hashing per request
   // would be real work for an answer that never varies.
   const build = buildId(PUBLIC);
+  // One etag for the whole build rather than per file: a change anywhere in public/ invalidates
+  // every asset. Over-invalidating costs a refetch; under-invalidating is the bug this feature
+  // exists to kill.
+  const etag = `W/"${build}"`;
+
+  // The page's own build id travels with the document that carried its code. Round 1 found
+  // the structural hole in taking it from the first id the server reports instead: if a
+  // rebuild lands between the browser fetching app.js and that page's first hello, the page
+  // adopts the *new* id as its baseline and never reloads — running superseded code while
+  // believing it is current, which is the one failure this feature exists to prevent.
+  //
+  // Read once: the files cannot change under a running container.
+  const indexHtml = readFileSync(join(PUBLIC, "index.html"), "utf8").replace(
+    "</head>",
+    `  <meta name="build" content="${build}">\n</head>`,
+  );
+  const serveIndex = (c: Context) => {
+    c.header("Cache-Control", "no-cache");
+    c.header("ETag", etag);
+    return c.html(indexHtml);
+  };
+
   const listeners = new Set<(event: string) => void>();
   // `notify` fans out to the browsers watching the SSE stream; `notifier` pushes to the phone.
   const notify = (event: string) => listeners.forEach((fn) => fn(event));
@@ -103,7 +128,8 @@ export function createApp(cfg: Config) {
 
   // --- Dashboard (logged in) --------------------------------------------------
   const ui = requireUi(cfg.password);
-  app.get("/", ui, (c) => c.html(readFileSync(join(PUBLIC, "index.html"), "utf8")));
+  app.get("/", ui, serveIndex);
+  app.get("/index.html", ui, serveIndex);
   // Everything under /api needs the UI cookie except the two machine entrypoints, which carry
   // their own bearer tokens: the hooks, and the runner's claim/report pair under /api/jobs/.
   // POST /api/jobs itself is the UI queueing work, so it stays behind the cookie.
@@ -240,13 +266,26 @@ export function createApp(cfg: Config) {
     }),
   );
 
-  // Always revalidate. Served with only last-modified, a browser caches on a heuristic and can
-  // keep stale JavaScript indefinitely — which is how a fixed bug keeps being reported.
+  // Always revalidate, and answer the revalidation. Served with only last-modified, a browser
+  // caches on a heuristic and can keep stale JavaScript indefinitely — which is how a fixed
+  // bug keeps being reported.
   app.use("/*", async (c, next) => {
-    await next();
-    if (/\.(js|css|webmanifest)$/.test(c.req.path)) {
+    const asset = ASSET_RE.test(c.req.path);
+    // Answered here rather than by serveStatic, which does no conditional handling: round 1
+    // measured a request carrying the exact etag just issued coming back 200 with the whole
+    // 34KB body, so "always ask, but a 304 is fine" was never true of this code.
+    if (asset && c.req.header("If-None-Match") === etag) {
       c.header("Cache-Control", "no-cache");
-      c.header("ETag", `W/"${build}"`);
+      c.header("ETag", etag);
+      return c.body(null, 304);
+    }
+    await next();
+    // Only where the response actually carries the asset. A 404 with a validator advertises a
+    // body it does not have — inert today, a cache-poisoning shape the moment anything starts
+    // honouring these headers.
+    if (asset && c.res.ok) {
+      c.header("Cache-Control", "no-cache");
+      c.header("ETag", etag);
     }
   });
   app.use("/*", serveStatic({ root: PUBLIC }));

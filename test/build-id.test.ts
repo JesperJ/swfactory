@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildId } from "../src/build-id.ts";
@@ -44,4 +44,18 @@ test("the id is stable across calls and short enough to read", () => {
 
 test("a missing directory yields an id rather than throwing", () => {
   assert.match(buildId("/does/not/exist"), /^[0-9a-f]{8}$/);
+});
+
+test("an unreadable entry does not stop the server booting", () => {
+  // buildId runs inside createApp, so throwing here means nothing serves at all. A dangling
+  // symlink under public/ is enough to cause it.
+  const dir = mkdtempSync(join(tmpdir(), "buildid-"));
+  writeFileSync(join(dir, "app.js"), "ok");
+  symlinkSync(join(dir, "does-not-exist"), join(dir, "broken.js"));
+  const id = buildId(dir);
+  assert.match(id, /^[0-9a-f]{8}$/);
+  // And the broken entry still counts: it appearing or vanishing is a real change.
+  rmSync(join(dir, "broken.js"));
+  assert.notEqual(buildId(dir), id);
+  rmSync(dir, { recursive: true, force: true });
 });
