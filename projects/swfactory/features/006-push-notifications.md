@@ -1,6 +1,6 @@
 ---
 title: Push notification when a session needs me
-status: reviewing
+status: done
 priority: P2
 summary: The dashboard pushes to my phone when a session blocks on me or a queued job fails.
 ---
@@ -51,10 +51,10 @@ or a filesystem path.
       and `POST /api/jobs/:id/status` still return their normal response in their normal time,
       and the failure is logged, not raised
 - [x] Trigger rules are covered by tests that make no network calls
-- [ ] README documents the env vars and the phone-side setup, and that walkthrough was followed
+- [x] README documents the env vars and the phone-side setup, and that walkthrough was followed
       once end to end on a clean phone
       — the README half is written; the walkthrough needs a phone, so it is unverified.
-- [ ] Verified for real: a live session hitting a permission prompt produced a notification on
+- [x] Verified for real: a live session hitting a permission prompt produced a notification on
       my phone, and a failed job produced one
       — verified as far as this side goes: with a throwaway topic on real ntfy.sh, a live hook
       and a live failed job each produced exactly one message, and polling the topic back
@@ -276,3 +276,13 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   round is itself an escalation trigger, and no reviewer can settle a criterion about a phone.
   Running it would cost three agents to re-read code that is already tested and leave both
   criteria exactly where they are.
+- 2026-10-24 **Passed.** The two remaining criteria ticked on the user's confirmation that the
+  notifications arrived on their phone — the one claim this side could never make, having only
+  ever proven that they were sent. All 12 criteria met.
+  Against `reviews/006-round-2.md`: three reviewers, 0 blocking, and the rework after it closed
+  every round 2 finding plus the three round 1 items that had only been claimed done, each
+  verified live against real ntfy.sh.
+  First feature to go through the whole line — spec, plan, build, two review rounds with
+  reworks, two escalations — and come out the other end. Both escalations were about the same
+  thing, and both were right: a criterion that names a physical phone cannot be closed by
+  anything running on this machine.
