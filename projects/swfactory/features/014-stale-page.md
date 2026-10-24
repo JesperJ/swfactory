@@ -118,3 +118,16 @@ the id has differed on two consecutive reads.
   consecutive reads so a flapping server cannot loop it, and never while a sheet is open or a
   queue request is in flight — those get a persistent "New version — reload" control instead.
   132 tests, typecheck clean. Phone verification is the one criterion left unticked.
+- 2026-10-24 Reviewed, round 1: **0 blocking** from all three reviewers, 17 minors.
+  Findings in `reviews/014-round-1.md`. The feature does what it was built to do — the UX
+  reviewer reproduced the original failure end to end and watched it die: page open at 390px,
+  CSS changed, server restarted, reloaded exactly once onto visibly new code, then quiet for 45s.
+  Four of the minors were found independently by two or three reviewers, which is the useful
+  signal in the round: the `queueInFlight` leak, the ETag that never produced a 304, the
+  boot-time baseline race, and validators on 404s. Seven are fixed in PR #15 (#14):
+  the baseline now travels in the document that carried the code, which also let the
+  two-reads rule go — and with it the ~120s worst case that broke the 60s criterion.
+  **Escalated, not passed.** One criterion is still unticked: verification on a real phone.
+  Both the UX reviewer and I tested at 390px in emulated mobile Chromium, which cannot show
+  iOS Safari tearing down SSE on backgrounding or a PWA resume — which is how this dashboard is
+  actually used. That is the gap, and it is yours to close in about thirty seconds.
