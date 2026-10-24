@@ -133,14 +133,14 @@ Tests use real git repositories in a temp directory, as `test/runner.test.ts` al
 `findCheckout` — worktree behaviour is exactly the kind of thing a mock would get wrong.
 
 ## Tasks
-- [ ] `worktreeFor`, pure: directory and branch per job, including the no-feature case
-- [ ] `defaultBranch`, reading `refs/remotes/origin/HEAD` with fallbacks and no network
-- [ ] `ensureWorktree`: create, reuse, and throw a named `JobError` on every other case
-- [ ] `start` launches tmux in the worktree; the shared checkout is only ever the source
-- [ ] Tests against real git repos: two features at once, reuse keeps uncommitted work, a
+- [x] `worktreeFor`, pure: directory and branch per job, including the no-feature case
+- [x] `defaultBranch`, reading `refs/remotes/origin/HEAD` with fallbacks and no network
+- [x] `ensureWorktree`: create, reuse, and throw a named `JobError` on every other case
+- [x] `start` launches tmux in the worktree; the shared checkout is only ever the source
+- [x] Tests against real git repos: two features at once, reuse keeps uncommitted work, a
       branch checked out elsewhere fails the job
 - [ ] A worktree failure reaches the dashboard as a failed job with its reason, and no session
-- [ ] Cleanup in reconcile: remove only a merged, clean worktree git itself lists; never force
+- [x] Cleanup in reconcile: remove only a merged, clean worktree git itself lists; never force
 - [ ] Dogfood: queue two jobs for different features at once and watch them not collide
 
 ## Open questions

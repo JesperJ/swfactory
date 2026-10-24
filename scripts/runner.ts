@@ -9,9 +9,9 @@
 // string from the dashboard is ever executed.
 
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadProjects, normalizeRepo } from "../src/specs.ts";
 import { JOB_COMMANDS, type Job } from "../src/db.ts";
@@ -27,6 +27,123 @@ const POLL_MS = Number(process.env.FACTORY_POLL_SECONDS ?? 10) * 1000;
 const auth = { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" };
 
 class JobError extends Error {}
+
+// Where the runner keeps its worktrees. Never inside a repository: a tree in there would show
+// up in `git status`, in the specs bind mount, and in every editor's file list.
+const WORKTREE_ROOT = resolve(
+  process.env.FACTORY_WORKTREE_ROOT ?? join(homedir(), ".cache", "factory", "worktrees"),
+);
+
+const safe = (s: string) => s.replace(/[^\w.-]/g, "-");
+
+export interface WorktreePlan {
+  dir: string;
+  branch: string;
+}
+
+// Where a job's work belongs: one tree per feature, on that feature's branch. Per feature
+// rather than per job, so a second build continues where an interrupted one stopped instead of
+// throwing its uncommitted work away. A job with no feature has no feature branch to be on, so
+// it gets the default branch in a tree of its own.
+export function worktreeFor(job: Job, root = WORKTREE_ROOT, defaultBranch = "main"): WorktreePlan {
+  if (!job.feature) return { dir: join(root, `${safe(job.project)}-base`), branch: defaultBranch };
+  return {
+    dir: join(root, `${safe(job.project)}-${safe(job.feature)}`),
+    branch: `feature/${safe(job.feature)}`,
+  };
+}
+
+// The repository's default branch, without a network call: a runner that needs the network to
+// start a job stops working when the network does.
+export function defaultBranch(repoPath: string): string {
+  const head = (args: string[]) => {
+    try {
+      return execFileSync("git", ["-C", repoPath, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return "";
+    }
+  };
+  const remote = head(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (remote) return remote.replace(/^origin\//, "");
+  if (head(["rev-parse", "--verify", "--quiet", "main"])) return "main";
+  return head(["rev-parse", "--abbrev-ref", "HEAD"]) || "main";
+}
+
+function git(repoPath: string, args: string[]): string {
+  return execFileSync("git", ["-C", repoPath, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+// Returns the worktree a job should run in, creating it when it does not exist and adopting it
+// when it does. Anything it cannot make sense of throws, because the alternative — falling back
+// to the shared checkout — is exactly the bug this feature exists to remove.
+export function ensureWorktree(repoPath: string, plan: WorktreePlan, base: string): string {
+  if (existsSync(plan.dir)) {
+    let onBranch: string;
+    try {
+      onBranch = git(plan.dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    } catch {
+      throw new JobError(`${plan.dir} exists but is not a git worktree; remove it or set FACTORY_WORKTREE_ROOT`);
+    }
+    if (onBranch !== plan.branch)
+      throw new JobError(`worktree ${plan.dir} is on ${onBranch}, expected ${plan.branch}`);
+    return plan.dir;
+  }
+
+  mkdirSync(dirname(plan.dir), { recursive: true });
+  const exists = (() => {
+    try {
+      git(repoPath, ["rev-parse", "--verify", "--quiet", `refs/heads/${plan.branch}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  // An existing branch is checked out; a new one is created from the base. git refuses either
+  // way if the branch is already checked out somewhere, which is a failure worth surfacing.
+  const args = exists
+    ? ["worktree", "add", plan.dir, plan.branch]
+    : ["worktree", "add", "-b", plan.branch, plan.dir, base];
+  try {
+    git(repoPath, args);
+  } catch (err) {
+    const why = (err as { stderr?: string }).stderr?.trim() || (err as Error).message;
+    throw new JobError(`could not create worktree for ${plan.branch}: ${why}`);
+  }
+  return plan.dir;
+}
+
+// Removes a worktree only when it is finished with: its branch merged into base, nothing
+// uncommitted in it, and git itself listing it as a worktree of this repository.
+//
+// Every guard here exists because this is the only code in the factory that deletes a directory
+// outside the repository. It never passes --force: an interrupted build's unsaved work is worth
+// more than a tidy cache, so a dirty tree is kept and simply tried again next time.
+export function pruneWorktree(repoPath: string, dir: string): "removed" | "kept" {
+  let listed: string;
+  try {
+    listed = git(repoPath, ["worktree", "list", "--porcelain"]);
+  } catch {
+    return "kept";
+  }
+  // Only ever act on a path git reports. A path we merely computed is not evidence enough.
+  if (!listed.split("\n").some((l) => l === `worktree ${dir}`)) return "kept";
+
+  try {
+    if (git(dir, ["status", "--porcelain"]) !== "") return "kept"; // uncommitted work
+    const branch = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    const base = defaultBranch(repoPath);
+    if (branch === base) return "kept"; // the base tree is not ours to remove
+    const unmerged = git(repoPath, ["branch", "--no-merged", base, "--list", branch]);
+    if (unmerged !== "") return "kept"; // work not yet in the base branch
+    git(repoPath, ["worktree", "remove", dir]);
+    return "removed";
+  } catch {
+    return "kept";
+  }
+}
 
 // Finds the checkout by git remote rather than by directory name: a renamed or wrong directory
 // then fails closed instead of running a build somewhere unintended.
@@ -86,7 +203,12 @@ async function start(job: Job): Promise<void> {
   if (!project) throw new JobError(`unknown project ${job.project} in ${SPECS_DIR}`);
   if (!project.repoUrl) throw new JobError(`project ${job.project} has no repo: in project.md`);
 
-  const cwd = findCheckout(REPO_ROOT, project.repoUrl);
+  const repoPath = findCheckout(REPO_ROOT, project.repoUrl);
+  // The shared checkout is what a worktree is made FROM, never what a session runs IN.
+  // See decisions/2026-10-24-the-runner-never-touches-my-checkout.md — there is deliberately
+  // no fallback here: a job that cannot get a clean tree fails rather than borrowing one.
+  const base = defaultBranch(repoPath);
+  const cwd = ensureWorktree(repoPath, worktreeFor(job, WORKTREE_ROOT, base), base);
   const name = sessionName(job);
 
   // Detached tmux, so a session that stops for a permission prompt is attachable rather than
@@ -130,6 +252,17 @@ async function reconcile(): Promise<void> {
     if (await tmuxSessionExists(sessionName(job))) continue;
     console.log(`[runner] job ${job.id}: tmux session gone, marking done`);
     await report(job.id, "done");
+    // The session is over, so its worktree may be finished with. pruneWorktree decides; it
+    // keeps anything unmerged or dirty, so this is safe to attempt on every closed job.
+    try {
+      const project = loadProjects(SPECS_DIR).find((p) => p.slug === job.project);
+      if (!project?.repoUrl) continue;
+      const repoPath = findCheckout(REPO_ROOT, project.repoUrl);
+      const { dir } = worktreeFor(job, WORKTREE_ROOT, defaultBranch(repoPath));
+      if (pruneWorktree(repoPath, dir) === "removed") console.log(`[runner] removed worktree ${dir}`);
+    } catch (err) {
+      console.error(`[runner] worktree cleanup skipped for job ${job.id}:`, (err as Error).message);
+    }
   }
 }
 
