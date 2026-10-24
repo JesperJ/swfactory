@@ -39,6 +39,9 @@ const safe = (s: string) => s.replace(/[^\w.-]/g, "-");
 export interface WorktreePlan {
   dir: string;
   branch: string;
+  /** Check out the commit, not the branch: a branch can live in only one worktree, and the
+   *  default branch lives in the human's checkout. */
+  detached?: boolean;
 }
 
 // Where a job's work belongs: one tree per feature, on that feature's branch. Per feature
@@ -46,11 +49,17 @@ export interface WorktreePlan {
 // throwing its uncommitted work away.
 //
 // Only `build` produces code that belongs on a feature branch. `spec`, `plan` and `review`
-// produce specs and findings, which belong on the default branch — round 1 found all three
-// landing on a feature branch, which the What table never said they should.
+// produce specs and findings, which belong on the default branch's content — but they cannot
+// *check out* the default branch: it is checked out in the human's own repo, and git allows a
+// branch in one worktree only. Sending them to `main` made every non-build job fail with
+// "'main' is already used by worktree at ...", which is three of the four commands.
+//
+// So they get a detached tree at the default branch's commit. Specs are written and committed
+// in `$FACTORY_HOME` anyway — the shared checkout the dashboard reads — so this tree is only
+// ever somewhere to stand and read the code from. Nothing commits to it.
 export function worktreeFor(job: Job, root = WORKTREE_ROOT, defaultBranch = "main"): WorktreePlan {
   if (job.command !== "build" || !job.feature)
-    return { dir: join(root, `${safe(job.project)}-base`), branch: defaultBranch };
+    return { dir: join(root, `${safe(job.project)}-base`), branch: defaultBranch, detached: true };
   return {
     dir: join(root, `${safe(job.project)}-${safe(job.feature)}`),
     branch: `feature/${safe(job.feature)}`,
@@ -91,6 +100,17 @@ export function ensureWorktree(repoPath: string, plan: WorktreePlan, base: strin
     } catch {
       throw new JobError(`${plan.dir} exists but is not a git worktree; remove it or set FACTORY_WORKTREE_ROOT`);
     }
+    // A detached tree reports HEAD rather than a branch name, and is refreshed to the current
+    // base so a reused one is never reading last week's code.
+    if (plan.detached) {
+      if (onBranch !== "HEAD") throw new JobError(`worktree ${plan.dir} is on ${onBranch}, expected a detached checkout`);
+      try {
+        git(plan.dir, ["checkout", "--detach", "-f", base]);
+      } catch {
+        throw new JobError(`worktree ${plan.dir} could not be refreshed to ${base}`);
+      }
+      return plan.dir;
+    }
     if (onBranch !== plan.branch)
       throw new JobError(`worktree ${plan.dir} is on ${onBranch}, expected ${plan.branch}`);
     return plan.dir;
@@ -107,9 +127,11 @@ export function ensureWorktree(repoPath: string, plan: WorktreePlan, base: strin
   })();
   // An existing branch is checked out; a new one is created from the base. git refuses either
   // way if the branch is already checked out somewhere, which is a failure worth surfacing.
-  const args = exists
-    ? ["worktree", "add", plan.dir, plan.branch]
-    : ["worktree", "add", "-b", plan.branch, plan.dir, base];
+  const args = plan.detached
+    ? ["worktree", "add", "--detach", plan.dir, base]
+    : exists
+      ? ["worktree", "add", plan.dir, plan.branch]
+      : ["worktree", "add", "-b", plan.branch, plan.dir, base];
   try {
     git(repoPath, args);
   } catch (err) {
@@ -140,6 +162,9 @@ export function pruneWorktree(repoPath: string, dir: string): "removed" | "kept"
     const branch = git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
     const base = defaultBranch(repoPath);
     if (branch === base) return "kept"; // the base tree is not ours to remove
+    // A detached tree reports "HEAD". It is the shared scratch space non-build jobs stand in,
+    // belongs to no feature, and has no branch to be merged — so it is never collectable.
+    if (branch === "HEAD") return "kept";
     const unmerged = git(repoPath, ["branch", "--no-merged", base, "--list", branch]);
     if (unmerged !== "") return "kept"; // work not yet in the base branch
     git(repoPath, ["worktree", "remove", dir]);
@@ -229,7 +254,16 @@ async function start(job: Job): Promise<void> {
   // dashboard never sees, so it kept recommending work that had already been done.
   await run(
     "tmux",
-    ["new-session", "-d", "-s", name, "-e", `FACTORY_HOME=${repoPath}`, "-c", cwd, "claude", commandFor(job)],
+    [
+      "new-session", "-d", "-s", name,
+      "-e", `FACTORY_HOME=${repoPath}`,
+      // The hook reads this and sends it as X-Factory-Feature, which is how the dashboard links
+      // a session to its feature. Branch name alone cannot: a non-build job runs in a detached
+      // tree and reports no branch at all, so every spec, plan and review session showed up
+      // unlinked. The runner knows the feature; it should say so rather than leave it inferred.
+      "-e", `FACTORY_FEATURE=${job.feature ?? ""}`,
+      "-c", cwd, "claude", commandFor(job),
+    ],
     { timeout: 20_000 },
   );
   console.log(`[runner] job ${job.id}: ${commandFor(job)} in ${cwd} (tmux ${name})`);
