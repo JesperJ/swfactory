@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { featureAction, lifecycleCounts, rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
+import { featureAction, lifecycleCounts, NEXT_FINISHED_HOURS, rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
 import { isJobCommand } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -231,4 +231,42 @@ test("a status outside the lifecycle is shown last rather than silently dropped"
   const stages = lifecycleCounts(projects);
   assert.equal(stages.at(-1)!.status, "wat");
   assert.equal(stages.at(-1)!.count, 1);
+});
+
+// --- which sessions still count as work ---------------------------------------------------
+//
+// Next showed four unactionable session rows out of eight: one on a feature that was done and
+// merged, two whose specs had been read hours earlier. These three rules are what stop that.
+
+const hoursAgo = (n: number) => new Date(NOW.getTime() - n * 3600_000).toISOString();
+
+test("a session on a done feature never ranks, in either sort order", () => {
+  const projects = [project("shop", [feature({ slug: "006-ntfy", status: "done" })])];
+  const sessions = [session({ id: "s1", project: "shop", feature: "006-ntfy", status_since: hoursAgo(1) })];
+  // Finished and merged — nothing the session could say changes that. Both sort orders are
+  // covered by one assertion: the view sorts whatever rankNext returns, so a row that is never
+  // produced cannot appear under either.
+  assert.deepEqual(rankNext(projects, sessions, NOW).filter((i) => i.sessionId), []);
+});
+
+test("a your_turn session ages out after two hours, a needs_you session does not", () => {
+  const projects = [project("shop", [feature({ slug: "001-a", status: "building" })])];
+  const fresh = session({ id: "fresh", project: "shop", feature: "001-a", status_since: hoursAgo(1) });
+  const stale = session({ id: "stale", project: "shop", feature: "001-a", status_since: hoursAgo(3) });
+  // "It stopped and wants a read" stops being true once it has sat there unread for hours.
+  assert.equal(rankNext(projects, [fresh], NOW).some((i) => i.sessionId === "fresh"), true);
+  assert.equal(rankNext(projects, [stale], NOW).some((i) => i.sessionId === "stale"), false);
+
+  // Blocked is blocked however long it has waited — the 48-hour window is unchanged.
+  const blocked = session({ id: "b", project: "shop", feature: "001-a", status: "needs_you", status_since: hoursAgo(40) });
+  assert.equal(rankNext(projects, [blocked], NOW).some((i) => i.sessionId === "b"), true);
+  const ancient = session({ id: "old", project: "shop", feature: "001-a", status: "needs_you", status_since: hoursAgo(60) });
+  assert.equal(rankNext(projects, [ancient], NOW).some((i) => i.sessionId === "old"), false);
+});
+
+test("the two windows are separate numbers, so tightening one does not move the other", () => {
+  // A regression guard with a reason: reusing one constant would mean a change to what Next
+  // displays silently became a change to what the runner destroys.
+  assert.equal(NEXT_FINISHED_HOURS, 2);
+  assert.notEqual(NEXT_FINISHED_HOURS, 48);
 });

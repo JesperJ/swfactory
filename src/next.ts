@@ -11,7 +11,12 @@ import { FEATURE_STATUSES, type Feature, type Project } from "./specs.ts";
 export type LinkedSession = Session & SessionLink;
 
 export const STALE_DAYS = 7; // a `building` feature with no Log entry for this long has stalled
-const REVIEW_WINDOW_MS = 48 * 3600_000; // a finished session older than this stops being urgent
+// A blocked session stays urgent however long it has waited — it is still blocked.
+const NEEDS_YOU_WINDOW_MS = 48 * 3600_000;
+// A finished session means "it stopped and wants a read". After two hours the honest reading is
+// that it has been read or stopped mattering. 48h turned Next into a log once the runner made
+// finished sessions the common case rather than the rare one.
+export const NEXT_FINISHED_HOURS = 2;
 const BLOCKED_PENALTY = 100; // blocked work sinks below everything actionable
 
 export type NextKind = "answer" | "review" | "approve" | "unstick" | "build" | "plan" | "spec";
@@ -80,10 +85,15 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
   // Without this the view degenerates into the session list it is supposed to replace.
   for (const s of sessions) {
     if (s.status !== "needs_you" && s.status !== "your_turn") continue;
-    if (s.status === "your_turn" && now.getTime() - new Date(s.status_since ?? s.updated_at).getTime() > REVIEW_WINDOW_MS) continue;
+    const idleMs = now.getTime() - new Date(s.status_since ?? s.updated_at).getTime();
+    if (s.status === "your_turn" && idleMs > NEXT_FINISHED_HOURS * 3600_000) continue;
+    if (s.status === "needs_you" && idleMs > NEEDS_YOU_WINDOW_MS) continue;
     const p = projectOf(s.project);
     if (!p) continue;
     const f = featureOf(p, s.feature);
+    // The feature is finished and merged; nothing this session says changes that. It stays in
+    // the Inbox and in Sessions, where history belongs, but it is not work to be chosen.
+    if (f?.status === "done") continue;
     // "A session finished" with no feature attached is not a piece of factory work — often it
     // is the session you are typing in. The Inbox lists it; Next should not recommend it.
     // A blocked session still ranks, feature or not, because being stuck is urgent either way.

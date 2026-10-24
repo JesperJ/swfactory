@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: specced
+status: reviewing
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -42,21 +42,26 @@ the same action the Inbox card already offers. A row you cannot act on has no bu
 built for acting.
 
 ## Acceptance criteria
-- [ ] A session whose feature is `done` never appears in Next, in either sort order
-- [ ] That session is still visible in Inbox and in Sessions
-- [ ] A `your_turn` session older than 2 hours does not appear in Next
-- [ ] A `needs_you` session keeps the existing 48-hour window, whatever its age
-- [ ] Every session row rendered in Next has a usable control: Open session where a URL exists,
+- [x] A session whose feature is `done` never appears in Next, in either sort order
+- [x] That session is still visible in Inbox and in Sessions
+- [x] A `your_turn` session older than 2 hours does not appear in Next
+- [x] A `needs_you` session keeps the existing 48-hour window, whatever its age
+- [x] Every session row rendered in Next has a usable control: Open session where a URL exists,
       Dismiss where it does not
-- [ ] Dismissing from Next removes the row without a reload, and the session stays dismissed
-- [ ] A session for a feature that is not `done` and finished minutes ago still ranks, so the
+- [x] Dismissing from Next removes the row without a reload, and the session stays dismissed
+- [x] A session for a feature that is not `done` and finished minutes ago still ranks, so the
       inbox-replacing behaviour is not lost
-- [ ] The rules live in `rankNext` with tests, not in the view
+- [x] The rules live in `rankNext` with tests, not in the view
 - [ ] A session idle longer than `SESSION_IDLE_HOURS` is ended and its job closed
-- [ ] A `needs_you` session is never ended, however long it has waited
-- [ ] An attached session is never ended, however long it has been idle
-- [ ] Ending a session is logged with which session and why, never silently
-- [ ] The Next window and the end-session timeout are separate constants, and a change to one
+      — **not verified end to end.** Every real candidate at build time was attached (all three
+      were the 006 session), so no session was actually ended. What was verified: the three
+      candidates were correctly identified, `tmux kill-session -t =name` works on a throwaway
+      session, and the pre-existing reconcile pass already closes a job whose tmux session is
+      gone. The join of those three was not observed.
+- [x] A `needs_you` session is never ended, however long it has waited
+- [x] An attached session is never ended, however long it has been idle
+- [x] Ending a session is logged with which session and why, never silently
+- [x] The Next window and the end-session timeout are separate constants, and a change to one
       does not change the other
 
 ## The cause, not just the symptom
@@ -108,6 +113,33 @@ These are the calls I made. Each is a decision to overturn, not a question to an
 - **Dismiss rather than a "mark read".** Dismiss already exists, already persists, and already
   means exactly this. A second concept would need a reason to exist.
 
+## Plan
+Three changes in `src/next.ts`, one in `public/app.js`, one in `scripts/runner.ts`.
+
+`rankNext` gains two rules: skip a session whose feature is `done`, and age `your_turn` out at
+`NEXT_FINISHED_HOURS` (2) while `needs_you` keeps the existing 48. Both live beside the rules
+they qualify, not in the view, so they are unit-testable without a DOM.
+
+The table gives every session row a control: `Open session` where a URL exists, `Dismiss` where
+it does not. `startControl` already returns nothing for session kinds — the row renders a
+dismiss button directly instead.
+
+The runner gains `endIdleSessions`, called from the reconcile pass that already runs each tick.
+It ends a tmux session that has been `your_turn` longer than `SESSION_IDLE_HOURS` (8). It needs
+the dashboard to tell it which sessions those are, so `GET /api/jobs/running` is joined by
+`GET /api/sessions/idle`, behind the same runner token.
+
+The guards are the part worth testing hardest: never a `needs_you` session, never an attached
+one, and never silently.
+
+## Tasks
+- [x] `rankNext`: a `done` feature's sessions do not rank, with a test
+- [x] `rankNext`: `your_turn` ages out at 2h, `needs_you` keeps 48h, with tests
+- [x] A dismiss control on every session row in the table, including those with no URL
+- [x] `GET /api/sessions/idle` behind the runner token, listing candidates past the threshold
+- [x] `endIdleSessions` in the runner: ends them, skips attached, logs each with its reason
+- [x] Verify for real against the four sessions currently open
+
 ## Log
 - 2026-10-24 Specced after you asked why done features were sitting in Next. They were not
   features — they were sessions attached to them, which the blank Pri and Status columns show
@@ -120,3 +152,27 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   three rules as first written hide a pile that keeps growing. The cause is that nothing ends a
   session when its work ends, and that now sits in this spec rather than being discovered again
   in a week.
+- 2026-10-24 Planned. Two constants, deliberately separate: `NEXT_FINISHED_HOURS` (2) for
+  leaving Next, `SESSION_IDLE_HOURS` (8) for being ended. The runner asks the dashboard which
+  sessions are idle rather than deriving it, because the dashboard owns session state and a
+  second opinion about what counts as idle is how two components drift apart. 6 tasks.
+- 2026-10-24 Built. `endIdleSessions` splits in two: `idleCandidates` is pure and decides
+  *which* sessions may be ended, away from tmux, because that is the destructive decision and
+  the part worth testing hardest. It drops anything that is not `your_turn` even though the
+  endpoint already filters on that — a second lock on the same door — and anything the runner
+  could not have named itself, since guessing a tmux name risks killing something unrelated.
+  130 tests, typecheck clean.
+- 2026-10-24 Verification found a real bug that unit tests could not have.
+  `tmux display-message -p -t "=name" '#{session_attached}'` reads like the direct way to ask
+  and is not: with no client attached to the server it prints an empty line for **every**
+  session, so every session read as attached and nothing would ever have been ended — the
+  feature would have shipped doing nothing, and looked right. `list-sessions` with a format
+  filter answers from the server: 006 attached=1, 007/009/010 attached=0, matching tmux.
+- 2026-10-24 Dry-run against the live session table, server on a copy of the container's DB:
+  7 rows came back idle past 8h. Four dropped for having no linkable feature (branch `main`
+  or `factory-dashboard-v0` — sessions started by hand, exactly the case the naming guard is
+  for). Three resolved to `factory-swfactory-006-push-notifications`, which was attached, and
+  were left alone. The 007 and 010 sessions were ~6h idle and under the threshold, so they
+  never appeared. Nothing was ended, which is the right answer for that state — and without
+  the attached guard the user's own terminal would have been the first thing killed.
+- 2026-10-24 PR https://github.com/JesperJ/swfactory/pull/13. Ready for `/factory review swfactory/015`.

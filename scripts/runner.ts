@@ -13,8 +13,9 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { loadProjects, normalizeRepo } from "../src/specs.ts";
-import { JOB_COMMANDS, type Job } from "../src/db.ts";
+import { loadProjects, normalizeRepo, type Project } from "../src/specs.ts";
+import { JOB_COMMANDS, type Job, type Session } from "../src/db.ts";
+import { linkSession } from "../src/match.ts";
 
 const run = promisify(execFile);
 
@@ -23,6 +24,12 @@ const TOKEN = process.env.FACTORY_RUNNER_TOKEN ?? "";
 const REPO_ROOT = resolve(process.env.FACTORY_REPO_ROOT ?? join(homedir(), "code", "repos"));
 const SPECS_DIR = resolve(process.env.SPECS_DIR ?? join(REPO_ROOT, "swfactory", "projects"));
 const POLL_MS = Number(process.env.FACTORY_POLL_SECONDS ?? 10) * 1000;
+
+// How long a session may sit at `your_turn` before the runner ends it. Deliberately not the
+// same number as `NEXT_FINISHED_HOURS` (2), which only decides whether a row shows in Next:
+// hiding a row and destroying a session are different acts. Tightening the display rule must
+// never quietly become a more aggressive kill rule.
+const SESSION_IDLE_HOURS = Number(process.env.FACTORY_SESSION_IDLE_HOURS ?? 8);
 
 const auth = { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" };
 
@@ -304,6 +311,82 @@ async function reconcile(): Promise<void> {
     await report(job.id, "done");
   }
   sweepWorktrees();
+  await endIdleSessions();
+}
+
+// A session that finished its turn and was never closed sits in tmux forever. Nothing ends one
+// when its work ends — `/factory build` says "ready for review" and the session waits at a
+// prompt. In one day that left four alive, the oldest since the previous evening, each holding
+// a worktree and a window.
+//
+// Which sessions are candidates is decided here, away from tmux, because it is the part worth
+// testing hardest: ending a session is destructive and unrecoverable.
+//
+//   - Only `your_turn`. A `needs_you` session is blocked on a person, which is the entire
+//     reason tmux was chosen over headless. The endpoint already filters on this; so does
+//     this function, because a destructive act should not rest on one component's filter.
+//   - Only a session the runner could have named itself. Without a project and a feature there
+//     is no tmux name to act on, and guessing one risks killing something else entirely.
+//
+// The third guard — never an attached session — cannot live here: it needs tmux.
+export function idleCandidates(sessions: Session[], projects: Project[]): { session: Session; name: string }[] {
+  const out: { session: Session; name: string }[] = [];
+  for (const s of sessions) {
+    if (s.status !== "your_turn") continue;
+    const { project, feature } = linkSession(s, projects);
+    if (!project || !feature) continue;
+    out.push({ session: s, name: sessionName({ project, feature } as Job) });
+  }
+  return out;
+}
+
+async function endIdleSessions(): Promise<void> {
+  let sessions: Session[] = [];
+  try {
+    const res = await fetch(`${BASE}/api/sessions/idle?hours=${SESSION_IDLE_HOURS}`, { headers: auth });
+    if (!res.ok) {
+      console.error(`[runner] idle sessions: dashboard returned ${res.status}`);
+      return;
+    }
+    sessions = ((await res.json()) as { sessions?: Session[] }).sessions ?? [];
+  } catch (err) {
+    console.error("[runner] idle sessions failed:", (err as Error).message);
+    return;
+  }
+  if (!sessions.length) return;
+
+  for (const { session, name } of idleCandidates(sessions, loadProjects(SPECS_DIR))) {
+    if (!(await tmuxSessionExists(name))) continue;
+    if (await tmuxAttached(name)) {
+      console.log(`[runner] ${name} idle since ${session.status_since} but attached — leaving it alone`);
+      continue;
+    }
+    try {
+      await run("tmux", ["kill-session", "-t", `=${name}`], { timeout: 10_000 });
+      console.log(`[runner] ended ${name}: your_turn since ${session.status_since}, over ${SESSION_IDLE_HOURS}h, nothing pending`);
+    } catch (err) {
+      console.error(`[runner] could not end ${name}:`, (err as Error).message);
+    }
+  }
+}
+
+// Someone is looking at it. Never end a session a person is sitting in.
+//
+// `display-message -p -t` looks like the direct way to ask and is not: with no attached
+// client it prints an empty line for every session, so every session reads as attached and
+// nothing is ever ended. `list-sessions` with a format filter answers from the server.
+export async function tmuxAttached(name: string): Promise<boolean> {
+  try {
+    const out = await run(
+      "tmux",
+      ["list-sessions", "-F", "#{session_attached}", "-f", `#{==:#{session_name},${name}}`],
+      { timeout: 10_000 },
+    );
+    // Empty means no session by that name — nothing to end, and not ours to guess about.
+    return out.stdout.trim() !== "0";
+  } catch {
+    return true; // cannot tell — assume someone is there, and leave it alone
+  }
 }
 
 // Round 1 found cleanup firing only in the tick a session ended — always *before* a human

@@ -4,8 +4,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandFor, defaultBranch, ensureWorktree, findCheckout, pruneWorktree, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
-import type { Job } from "../src/db.ts";
+import { commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, pruneWorktree, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
+import type { Job, Session } from "../src/db.ts";
+import type { Feature, Project } from "../src/specs.ts";
 
 function job(over: Partial<Job> = {}): Job {
   return {
@@ -311,4 +312,66 @@ test("the sweep never collects the detached base tree", () => {
   const dir = ensureWorktree(repo, worktreeFor(job({ command: "spec", feature: null }), root, base), base);
   sweepWorktrees(root);
   assert.equal(existsSync(dir), true, "the shared base tree must survive every sweep");
+});
+
+// --- which idle sessions may be ended -----------------------------------------------------
+//
+// Ending a session destroys work in progress and cannot be undone, so the guards are tested
+// before anything else about this path.
+
+const idleFeatures: Feature[] = [
+  { id: "006", slug: "006-ntfy", title: "ntfy", status: "done", priority: null, summary: null, blocked: null, lastLog: null, file: "006-ntfy.md" },
+  { id: "015", slug: "015-finished-sessions", title: "x", status: "building", priority: null, summary: null, blocked: null, lastLog: null, file: "015.md" },
+];
+const idleProjects: Project[] = [
+  { slug: "swfactory", name: "swfactory", status: "active", summary: null, repo: "github.com/jesper/swfactory", repoUrl: null, features: idleFeatures, file: "" },
+];
+
+function session(over: Partial<Session> = {}): Session {
+  return {
+    id: "s1",
+    status: "your_turn",
+    status_since: "2026-10-23T22:21:00.000Z",
+    url: null,
+    cwd: "/home/me/code/repos/swfactory",
+    repo: "github.com/jesper/swfactory",
+    branch: "feature/015-finished-sessions",
+    host: "box",
+    feature_hint: null,
+    prompt: null,
+    message: null,
+    last_event: "Stop",
+    started_at: "2026-10-23T22:00:00.000Z",
+    updated_at: "2026-10-23T22:21:00.000Z",
+    dismissed: 0,
+    ...over,
+  };
+}
+
+test("an idle your_turn session is a candidate, named the way the runner names its own", () => {
+  const out = idleCandidates([session()], idleProjects);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, "factory-swfactory-015-finished-sessions");
+});
+
+test("a needs_you session is never a candidate, however long it has waited", () => {
+  // The endpoint filters these out too. This is the second lock on the same door: a
+  // destructive act must not depend on one component's filter being right.
+  assert.deepEqual(idleCandidates([session({ status: "needs_you" })], idleProjects), []);
+  assert.deepEqual(idleCandidates([session({ status: "working" })], idleProjects), []);
+  assert.deepEqual(idleCandidates([session({ status: "ended" })], idleProjects), []);
+});
+
+test("a session the runner could not have named is left alone", () => {
+  // No project: nothing ties it to this factory at all.
+  assert.deepEqual(idleCandidates([session({ repo: null, cwd: "/tmp/elsewhere" })], idleProjects), []);
+  // A project but no feature — a session started by hand in the repo, as happened for real.
+  // There is no tmux name to act on, and guessing one risks killing something else.
+  assert.deepEqual(idleCandidates([session({ branch: "main" })], idleProjects), []);
+});
+
+test("a done feature's session is still a candidate — done is what makes it endable", () => {
+  // The 006 session alive since the previous evening is exactly the case this exists for.
+  const out = idleCandidates([session({ branch: "feature/006-ntfy" })], idleProjects);
+  assert.equal(out[0]?.name, "factory-swfactory-006-ntfy");
 });
