@@ -43,10 +43,14 @@ export interface WorktreePlan {
 
 // Where a job's work belongs: one tree per feature, on that feature's branch. Per feature
 // rather than per job, so a second build continues where an interrupted one stopped instead of
-// throwing its uncommitted work away. A job with no feature has no feature branch to be on, so
-// it gets the default branch in a tree of its own.
+// throwing its uncommitted work away.
+//
+// Only `build` produces code that belongs on a feature branch. `spec`, `plan` and `review`
+// produce specs and findings, which belong on the default branch — round 1 found all three
+// landing on a feature branch, which the What table never said they should.
 export function worktreeFor(job: Job, root = WORKTREE_ROOT, defaultBranch = "main"): WorktreePlan {
-  if (!job.feature) return { dir: join(root, `${safe(job.project)}-base`), branch: defaultBranch };
+  if (job.command !== "build" || !job.feature)
+    return { dir: join(root, `${safe(job.project)}-base`), branch: defaultBranch };
   return {
     dir: join(root, `${safe(job.project)}-${safe(job.feature)}`),
     branch: `feature/${safe(job.feature)}`,
@@ -219,9 +223,15 @@ async function start(job: Job): Promise<void> {
 
   // Detached tmux, so a session that stops for a permission prompt is attachable rather than
   // stuck and invisible. Arguments are passed as an array; nothing goes through a shell.
-  await run("tmux", ["new-session", "-d", "-s", name, "-c", cwd, "claude", commandFor(job)], {
-    timeout: 20_000,
-  });
+  // FACTORY_HOME tells the session where the shared specs live. Code work happens in the
+  // worktree; specs are the factory's shared state and are written and committed in the one
+  // checkout the dashboard reads. Round 1 found specs written to an unmerged branch the
+  // dashboard never sees, so it kept recommending work that had already been done.
+  await run(
+    "tmux",
+    ["new-session", "-d", "-s", name, "-e", `FACTORY_HOME=${repoPath}`, "-c", cwd, "claude", commandFor(job)],
+    { timeout: 20_000 },
+  );
   console.log(`[runner] job ${job.id}: ${commandFor(job)} in ${cwd} (tmux ${name})`);
 }
 
@@ -258,16 +268,25 @@ async function reconcile(): Promise<void> {
     if (await tmuxSessionExists(sessionName(job))) continue;
     console.log(`[runner] job ${job.id}: tmux session gone, marking done`);
     await report(job.id, "done");
-    // The session is over, so its worktree may be finished with. pruneWorktree decides; it
-    // keeps anything unmerged or dirty, so this is safe to attempt on every closed job.
+  }
+  sweepWorktrees();
+}
+
+// Round 1 found cleanup firing only in the tick a session ended — always *before* a human
+// merges the branch, so nothing was ever mergeable yet and worktrees accumulated forever.
+// It now runs every tick over every worktree git lists, so a tree becomes collectable the
+// moment its branch lands rather than at the one instant it could never be.
+export function sweepWorktrees(root = WORKTREE_ROOT): void {
+  if (!existsSync(root)) return;
+  for (const name of readdirSync(root)) {
+    const dir = join(root, name);
+    if (!existsSync(join(dir, ".git"))) continue;
     try {
-      const project = loadProjects(SPECS_DIR).find((p) => p.slug === job.project);
-      if (!project?.repoUrl) continue;
-      const repoPath = findCheckout(REPO_ROOT, project.repoUrl);
-      const { dir } = worktreeFor(job, WORKTREE_ROOT, defaultBranch(repoPath));
+      // The worktree knows its own repository, so cleanup needs no job and no project lookup.
+      const repoPath = git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).replace(/\/\.git\/?$/, "");
       if (pruneWorktree(repoPath, dir) === "removed") console.log(`[runner] removed worktree ${dir}`);
-    } catch (err) {
-      console.error(`[runner] worktree cleanup skipped for job ${job.id}:`, (err as Error).message);
+    } catch {
+      // A tree we cannot reason about is left alone, which is the safe direction.
     }
   }
 }

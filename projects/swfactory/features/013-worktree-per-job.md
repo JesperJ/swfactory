@@ -157,6 +157,9 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   merged and whose session is gone — the same reconcile pass that already closes finished jobs.
 - **A job that cannot get a clean worktree fails loudly rather than falling back to the shared
   checkout.** Falling back is what today's behaviour already is, and it is the bug.
+- **A fresh worktree has no `node_modules`.** The first `npm test` in one fails outright. The
+  runner could install on create, the build command could install when it finds none, or the
+  repo could be told to share a store. Not decided, and not guessed at here.
 
 ## Log
 - 2026-10-24 Specced after the hazard fired three times in one day: a spec job committing to
@@ -187,3 +190,36 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   Cleanup is guarded four ways and tested on each: it keeps a dirty tree, keeps an unmerged
   branch, keeps the base tree, and refuses any path git does not itself list as a worktree. It
   never passes `--force`. 120 tests, typecheck clean.
+- 2026-10-24 Review round 1 (`reviews/013-round-1.md`): 4 blocking, 15 minor across three
+  reviewers. Escalated rather than reworked, because one blocking finding changes the feature's
+  premise rather than its code. review-ux 2: the session now writes specs inside the worktree
+  and commits them to an unmerged branch, while the dashboard reads `SPECS_DIR` in the shared
+  checkout — so the dashboard no longer sees the work it starts. Live proof on this machine:
+  007 and 010 are `specced` in their worktrees and `idea` on the dashboard, which keeps
+  recommending "Spec it" for both. During a build, tasks never tick. The spec's What and Out of
+  scope never considered where specs land once the session stopped sharing my checkout, so this
+  is a spec decision, not a bug fix.
+  The other three blocking findings are local and reworkable once that call is made:
+  review-code 1, cleanup is attempted only in the tick a session ends, which is always before
+  the human merges, so a worktree per feature accumulates forever (006 and 012 are merged,
+  clean and still present); review-code 2, `worktreeFor` ignores `job.command`, so `spec` and
+  `plan` jobs land on a feature branch the What table says should be the default branch;
+  review-ux 1, `white-space: nowrap` on `.c-action` means a failure reason blows the layout to
+  1384px at 375px width, so the reason the criterion promises is the one thing unreadable.
+  Also noted: PR #7 is already merged into `main`, so all of this has landed.
+- 2026-10-24 Round 1 reworked. The escalation was answered: **specs are shared state and live in
+  one place**, `$FACTORY_HOME/projects`, written and committed there whatever worktree a session
+  is working in. The runner passes `FACTORY_HOME` through `tmux -e`, and `factory.md` now says
+  it as a rule rather than leaving it to be inferred. Code stays on the feature branch; specs
+  and code are committed in different working trees, deliberately.
+  The three local blockers are fixed: `worktreeFor` now gives a feature branch only to `build`,
+  so `spec`, `plan` and `review` stay on the default branch as the What table always said;
+  cleanup became `sweepWorktrees`, running every tick over every tree git lists rather than only
+  in the tick a session ended — which was always before a human could merge, so nothing was ever
+  collectable; and `.c-action` no longer forces `nowrap` on a failure reason, which was blowing
+  a 375px layout to 1384px and hiding the one sentence the criterion promises.
+  Found while fixing, and not in any review: **a fresh worktree has no `node_modules`**, so the
+  first `npm test` a build runs in one fails with `ERR_MODULE_NOT_FOUND`. I hit it on the first
+  command in this very worktree. Recorded as an open question below rather than fixed here —
+  whether the runner should install dependencies, or the build command should, is a real choice.
+  123 tests, typecheck clean.

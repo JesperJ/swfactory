@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandFor, defaultBranch, ensureWorktree, findCheckout, pruneWorktree, sessionName, worktreeFor } from "../scripts/runner.ts";
+import { commandFor, defaultBranch, ensureWorktree, findCheckout, pruneWorktree, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
 import type { Job } from "../src/db.ts";
 
 function job(over: Partial<Job> = {}): Job {
@@ -234,4 +234,44 @@ test("cleanup refuses a path git does not list as a worktree", () => {
 
   assert.equal(pruneWorktree(repo, stray), "kept");
   assert.equal(existsSync(stray), true, "a computed path is not evidence enough to delete");
+});
+
+test("only a build gets a feature branch; spec, plan and review stay on the default", () => {
+  // Round 1: all four commands landed on a feature branch, which the What table never said.
+  for (const command of ["spec", "plan", "review"] as const) {
+    const plan = worktreeFor(job({ command, feature: "001-a" }), "/wt", "main");
+    assert.equal(plan.branch, "main", `${command} must not take a feature branch`);
+    assert.equal(plan.dir, "/wt/swfactory-base");
+  }
+  const build = worktreeFor(job({ command: "build", feature: "001-a" }), "/wt", "main");
+  assert.equal(build.branch, "feature/001-a");
+});
+
+test("the sweep collects a merged worktree without needing the job that made it", () => {
+  // Round 1: cleanup only ran in the tick a session ended — always before a human merges, so
+  // nothing was ever collectable. The sweep runs every tick instead.
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ command: "build", feature: "001-a" }), root, base), base);
+  const g = (...a: string[]) => execFileSync("git", ["-C", wt, ...a], { stdio: "ignore" });
+  writeFileSync(join(wt, "done.txt"), "x");
+  g("add", "done.txt");
+  g("commit", "-qm", "finished");
+
+  sweepWorktrees(root);
+  assert.equal(existsSync(wt), true, "not merged yet, so it stays");
+
+  execFileSync("git", ["-C", repo, "merge", "-q", "feature/001-a"], { stdio: "ignore" });
+  sweepWorktrees(root);
+  assert.equal(existsSync(wt), false, "merged, so the next sweep collects it");
+});
+
+test("the sweep leaves alone anything that is not a worktree", () => {
+  const root = wtRoot();
+  const stray = join(root, "just-a-directory");
+  mkdirSync(stray, { recursive: true });
+  writeFileSync(join(stray, "keep.txt"), "x");
+  sweepWorktrees(root);
+  assert.equal(existsSync(stray), true);
 });

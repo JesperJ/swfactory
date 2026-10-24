@@ -463,7 +463,11 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .nexttable .ftitle { display: block; overflow: hidden; text-overflow: ellipsis; }
 .nexttable .fid { font: 12px var(--mono); color: var(--text-3); margin-right: 6px; }
 .nexttable .c-why { color: var(--text-3); font-size: 13px; }
-.nexttable .c-action { text-align: right; white-space: nowrap; }
+/* nowrap keeps the button on one line, but a failure reason is prose and must wrap: round 1
+   found it forcing the page to 1384px at 375px wide, making the one thing the criterion
+   promises you can read the one thing you cannot. Only the button resists wrapping. */
+.nexttable .c-action { text-align: right; }
+.nexttable .c-action .btn { white-space: nowrap; }
 .nexttable .c-action .btn { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .nexttable .c-sub { display: none; }
 .tablewrap.blocked tbody tr { opacity: .7; }
@@ -494,7 +498,7 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
   }
   .nexttable .c-why { margin-top: 4px; }
   .nexttable .c-action:empty { display: none; }
-  .nexttable .c-action { margin-top: 10px; text-align: right; }
+  .nexttable .c-action { margin-top: 10px; text-align: right; white-space: normal; }
   .nexttable .c-action .btn { min-height: 44px; }
 }
 

@@ -30,8 +30,17 @@ behave as `next`. Follow only the matching section below.
   set `done`.
 - A feature id may be `008`, `swfactory/008`, or a slug. If the project is ambiguous and more
   than one exists, say so and stop.
-- The specs live in `projects/` in the factory repo. From a project's own repo, look for
-  `$FACTORY_HOME/projects`, then `../swfactory/projects`.
+- **Specs are shared state and live in exactly one place: `$FACTORY_HOME/projects`.** Write and
+  commit every spec, decision and review file there, on whatever branch that checkout is on —
+  never inside the worktree you are working in, even when it is a checkout of the same
+  repository. `$FACTORY_HOME` is set for you when the runner starts a session; failing that
+  look for `../swfactory/projects`, and if neither resolves, say so and stop rather than
+  writing a spec somewhere nothing reads.
+  The dashboard reads that one checkout. A spec written to a feature branch is invisible to it,
+  so it goes on recommending work that is already done — which is exactly what happened before
+  this rule existed.
+- Code belongs on the feature branch in the worktree; specs belong in the specs checkout. The
+  two are committed separately, in different working trees, and that is deliberate.
 - Every sub-command that changes a spec commits it: `factory: <sub> <project>/<NNN>`.
 
 ---
