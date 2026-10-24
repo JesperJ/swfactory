@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandFor, findCheckout, sessionName } from "../scripts/runner.ts";
+import { commandFor, defaultBranch, ensureWorktree, findCheckout, pruneWorktree, sessionName, worktreeFor } from "../scripts/runner.ts";
 import type { Job } from "../src/db.ts";
 
 function job(over: Partial<Job> = {}): Job {
@@ -78,4 +78,160 @@ test("a command outside the allowed set is refused even if it reaches the runner
 test("tmux session names are safe to use as identifiers", () => {
   assert.equal(sessionName(job()), "factory-swfactory-005-start-session");
   assert.equal(sessionName(job({ project: "a b/c", feature: "x:y" })), "factory-a-b-c-x-y");
+});
+
+// --- worktrees ---------------------------------------------------------------
+// Real repositories, not mocks: git's own rules about which branch may be checked out where
+// are the thing under test, and a mock would simply agree with whatever I assumed.
+
+function repoWithCommit(): string {
+  const dir = mkdtempSync(join(tmpdir(), "factory-repo-"));
+  const g = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { stdio: "ignore" });
+  execFileSync("git", ["init", "-q", "-b", "main", dir], { stdio: "ignore" });
+  g("config", "user.email", "t@t");
+  g("config", "user.name", "t");
+  writeFileSync(join(dir, "README.md"), "x");
+  g("add", "README.md");
+  g("commit", "-qm", "init");
+  return dir;
+}
+
+const wtRoot = () => mkdtempSync(join(tmpdir(), "factory-wt-"));
+const branchOf = (dir: string) =>
+  execFileSync("git", ["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim();
+
+test("a job's worktree is named for its feature and sits outside the repo", () => {
+  const plan = worktreeFor(job(), "/wt", "main");
+  assert.equal(plan.dir, "/wt/swfactory-005-start-session");
+  assert.equal(plan.branch, "feature/005-start-session");
+});
+
+test("a job with no feature gets the default branch, not a feature branch", () => {
+  const plan = worktreeFor(job({ feature: null }), "/wt", "trunk");
+  assert.equal(plan.branch, "trunk");
+  assert.equal(plan.dir, "/wt/swfactory-base");
+});
+
+test("two features get separate trees on separate branches, and neither is the checkout", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const a = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  const b = ensureWorktree(repo, worktreeFor(job({ feature: "002-b" }), root, base), base);
+
+  assert.notEqual(a, b);
+  assert.notEqual(a, repo, "a job must never run in the shared checkout");
+  assert.equal(branchOf(a), "feature/001-a");
+  assert.equal(branchOf(b), "feature/002-b");
+  assert.equal(branchOf(repo), base, "the checkout stays on the branch it was on");
+});
+
+test("uncommitted work in the checkout is neither seen nor disturbed", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  writeFileSync(join(repo, "mine.txt"), "work in progress");
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+
+  assert.equal(existsSync(join(wt, "mine.txt")), false, "the worktree must not see it");
+  assert.equal(readFileSync(join(repo, "mine.txt"), "utf8"), "work in progress");
+});
+
+test("a second job for the same feature reuses the tree, keeping its uncommitted work", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const plan = worktreeFor(job({ feature: "001-a" }), root, base);
+  const first = ensureWorktree(repo, plan, base);
+  writeFileSync(join(first, "half-done.txt"), "interrupted");
+
+  const second = ensureWorktree(repo, plan, base);
+  assert.equal(second, first);
+  assert.equal(readFileSync(join(second, "half-done.txt"), "utf8"), "interrupted");
+});
+
+test("a branch already checked out elsewhere fails the job instead of borrowing a tree", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  // Same branch, different directory: git refuses, and so must we.
+  const clash = { dir: join(root, "somewhere-else"), branch: "feature/001-a" };
+  assert.throws(() => ensureWorktree(repo, clash, base), /could not create worktree/);
+});
+
+test("a directory that is not a worktree fails rather than being used", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const dir = join(root, "not-a-worktree");
+  mkdirSync(dir, { recursive: true });
+  assert.throws(() => ensureWorktree(repo, { dir, branch: "feature/001-a" }, "main"), /not a git worktree/);
+});
+
+test("commits made in a worktree are visible from the main repo", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  const g = (...args: string[]) => execFileSync("git", ["-C", wt, ...args], { stdio: "ignore" });
+  writeFileSync(join(wt, "done.txt"), "x");
+  g("add", "done.txt");
+  g("commit", "-qm", "from the worktree");
+
+  const log = execFileSync("git", ["-C", repo, "log", "--oneline", "feature/001-a"], { encoding: "utf8" });
+  assert.match(log, /from the worktree/, "the object store is shared, so no extra step is needed");
+});
+
+test("defaultBranch finds the branch without a network call", () => {
+  const repo = repoWithCommit();
+  assert.equal(defaultBranch(repo), "main");
+});
+
+test("cleanup keeps a worktree with uncommitted work", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  writeFileSync(join(wt, "unsaved.txt"), "do not delete this");
+
+  assert.equal(pruneWorktree(repo, wt), "kept");
+  assert.equal(existsSync(wt), true);
+});
+
+test("cleanup keeps a worktree whose branch is not merged", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  const g = (...a: string[]) => execFileSync("git", ["-C", wt, ...a], { stdio: "ignore" });
+  writeFileSync(join(wt, "done.txt"), "x");
+  g("add", "done.txt");
+  g("commit", "-qm", "work not yet merged");
+
+  assert.equal(pruneWorktree(repo, wt), "kept", "unmerged work must survive");
+  assert.equal(existsSync(wt), true);
+});
+
+test("cleanup removes a clean, merged worktree", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  const g = (...a: string[]) => execFileSync("git", ["-C", wt, ...a], { stdio: "ignore" });
+  writeFileSync(join(wt, "done.txt"), "x");
+  g("add", "done.txt");
+  g("commit", "-qm", "finished");
+  execFileSync("git", ["-C", repo, "merge", "-q", "feature/001-a"], { stdio: "ignore" });
+
+  assert.equal(pruneWorktree(repo, wt), "removed");
+  assert.equal(existsSync(wt), false);
+});
+
+test("cleanup refuses a path git does not list as a worktree", () => {
+  const repo = repoWithCommit();
+  const stray = mkdtempSync(join(tmpdir(), "factory-stray-"));
+  writeFileSync(join(stray, "someone-elses-file.txt"), "important");
+
+  assert.equal(pruneWorktree(repo, stray), "kept");
+  assert.equal(existsSync(stray), true, "a computed path is not evidence enough to delete");
 });
