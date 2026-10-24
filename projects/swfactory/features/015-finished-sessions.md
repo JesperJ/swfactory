@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: reviewing
+status: building
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -45,7 +45,11 @@ built for acting.
 - [x] A session whose feature is `done` never appears in Next, in either sort order
 - [x] That session is still visible in Inbox and in Sessions
 - [x] A `your_turn` session older than 2 hours does not appear in Next
-- [x] A `needs_you` session keeps the existing 48-hour window, whatever its age
+- [ ] A `needs_you` session never ages out of Next, however long it has waited
+      — this criterion was wrong when written *and* ticked when false. There was no existing
+      48-hour window for `needs_you`; the window applied to `your_turn` only. The diff added
+      a cutoff that did not exist, and the tick claimed the opposite. Rewritten to what was
+      always meant: blocked is blocked.
 - [x] Every session row rendered in Next has a usable control: Open session where a URL exists,
       Dismiss where it does not
 - [x] Dismissing from Next removes the row without a reload, and the session stays dismissed
@@ -132,6 +136,17 @@ the dashboard to tell it which sessions those are, so `GET /api/jobs/running` is
 The guards are the part worth testing hardest: never a `needs_you` session, never an attached
 one, and never silently.
 
+## Tasks (round 1 rework)
+- [ ] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
+      than the row's `status_since`, and skip a name another live row claims with a status
+      other than `your_turn`
+- [ ] Re-check the age threshold in `idleCandidates` instead of trusting the dashboard's filter
+- [ ] `idleSessions` filters `dismissed = 0`, so Dismiss actually revokes the kill order
+- [ ] Remove the `needs_you` cutoff from `rankNext`; fix the comment and the test that each
+      assert something different from the code
+- [ ] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxAttached`
+- [ ] Clamp `hours` to a sane floor and drop the duplicated `8` in `src/server.ts`
+
 ## Tasks
 - [x] `rankNext`: a `done` feature's sessions do not rank, with a test
 - [x] `rankNext`: `your_turn` ages out at 2h, `needs_you` keeps 48h, with tests
@@ -176,3 +191,28 @@ one, and never silently.
   never appeared. Nothing was ended, which is the right answer for that state — and without
   the attached guard the user's own terminal would have been the first thing killed.
 - 2026-10-24 PR https://github.com/JesperJ/swfactory/pull/13. Ready for `/factory review swfactory/015`.
+- 2026-10-24 Reviewed, round 1: code 3 blocking / 5 minor, security 2 blocking / 4 minor,
+  UX 1 blocking / 7 minor. Findings in `reviews/015-round-1.md`. **Rework**, three defects:
+  - **The kill target is a name, not an identity.** A session row resolves to
+    `factory-<project>-<feature>` and the runner kills whatever answers to that name now. Rows
+    are never deleted and `idleSessions` has no upper age bound, so a stale `your_turn` row is a
+    standing kill order on that feature's tmux name — tap Build on 006 later and the fresh,
+    actively-working session dies within a tick. The evidence was in this spec already: the
+    dry-run log records *three* rows resolving to one name. Worse, `reconcile` then reports the
+    job **done**, so the dashboard shows success for work it destroyed. Reachable deliberately
+    too: the hook sends `branch` from `git branch --show-current` in the session's own cwd, and
+    `upsert` merges `branch` without moving `status_since` — so a `Stop` hook retargets the
+    kill while keeping the old clock, and the 8-hour wait is skippable.
+  - **The age threshold is enforced only by the dashboard.** `idleCandidates` doubles the cheap
+    guard (`status === "your_turn"`) and takes the load-bearing one on faith. And
+    `idleSessions` has no `dismissed` filter, so the Dismiss button this feature adds looks
+    like the remedy for a stale row and does nothing about its authority to kill.
+  - **`needs_you` gained a 48-hour cutoff it never had, and I ticked the criterion saying it
+    did not.** The window applied to `your_turn` only before this diff. The comment above the
+    constant, the test's name, the test's comment and the criterion all say blocked work never
+    ages out; the line between them drops it at 48h. A session blocked on a permission prompt
+    over a weekend disappears from the view whose whole job is to say what is waiting on you —
+    while still being counted in the Inbox badge. Found independently by all three reviewers.
+  Everything on the Next side was verified working by three reviewers at 390px and 1366px, light
+  and dark, both sort orders. What has to change is the part that ends processes on the host —
+  which this spec called "the guards worth testing hardest" and then left untested.
