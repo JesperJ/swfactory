@@ -8,7 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, isJobCommand, JOB_COMMANDS } from "./db.ts";
 import { parseHook } from "./hooks.ts";
 import { linkSession } from "./match.ts";
-import { featureAction, rankNext } from "./next.ts";
+import { featureAction, lifecycleCounts, rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
@@ -120,6 +120,7 @@ export function createApp(cfg: Config) {
       sessions,
       jobs: cfg.store.listJobs(),
       next: rankNext(projects, sessions),
+      lifecycle: lifecycleCounts(projects),
       now: new Date().toISOString(),
     });
   });

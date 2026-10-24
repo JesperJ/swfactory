@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { featureAction, rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
+import { featureAction, lifecycleCounts, rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
 import { isJobCommand } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -185,4 +185,50 @@ test("every command a feature can queue is one the API accepts", () => {
     const a = featureAction(feature({ slug: "001-x", status }), NOW);
     if (a?.command) assert.ok(isJobCommand(a.command), `${status} queues ${a.command}, which the API would reject`);
   }
+});
+
+test("a ranked feature carries the priority and status its spec has", () => {
+  // The table needs both as columns. Round 1 of 005 found the UI deriving what the server
+  // should hand it; these come from the server for the same reason.
+  const projects = [project("shop", [feature({ slug: "001-a", status: "planned", priority: "P1" })])];
+  const [top] = rankNext(projects, [], NOW);
+  assert.equal(top.priority, "P1");
+  assert.equal(top.status, "planned");
+});
+
+test("a session row carries no priority or status", () => {
+  const s = session({ id: "s1", status: "needs_you", project: "shop" });
+  const [top] = rankNext([project("shop", [])], [s], NOW);
+  assert.equal(top.priority, null);
+  assert.equal(top.status, null, "a session is not at a lifecycle stage");
+});
+
+test("lifecycleCounts returns every stage in order, including empty ones", () => {
+  const projects = [
+    project("shop", [
+      feature({ slug: "001-a", status: "idea" }),
+      feature({ slug: "002-b", status: "idea" }),
+      feature({ slug: "003-c", status: "reviewing" }),
+      feature({ slug: "004-d", status: "done" }),
+    ]),
+  ];
+  const stages = lifecycleCounts(projects);
+  assert.deepEqual(stages.map((s) => s.status), ["idea", "specced", "planned", "building", "reviewing", "done"]);
+  assert.deepEqual(stages.map((s) => s.count), [2, 0, 0, 0, 1, 1]);
+});
+
+test("lifecycleCounts counts only active projects, and the counts sum to their features", () => {
+  const projects = [
+    project("shop", [feature({ slug: "001-a", status: "idea" }), feature({ slug: "002-b", status: "done" })]),
+    project("old", [feature({ slug: "003-c", status: "idea" })], "paused"),
+  ];
+  const total = lifecycleCounts(projects).reduce((n, s) => n + s.count, 0);
+  assert.equal(total, 2, "a paused project's features are not in the strip");
+});
+
+test("a status outside the lifecycle is shown last rather than silently dropped", () => {
+  const projects = [project("shop", [feature({ slug: "001-a", status: "wat" })])];
+  const stages = lifecycleCounts(projects);
+  assert.equal(stages.at(-1)!.status, "wat");
+  assert.equal(stages.at(-1)!.count, 1);
 });

@@ -57,7 +57,7 @@ async function shoot(b: Browser, s: Shot, problems: string[]) {
   await p.goto(`${BASE}/login`);
   await p.fill("#password", PASSWORD);
   await Promise.all([p.waitForURL(`${BASE}/`), p.click("button[type=submit]")]);
-  await p.waitForSelector(".hero, .card, .empty");
+  await p.waitForSelector(".nexttable, .card, .empty");
   for (const sel of s.steps ?? []) {
     await p.click(sel);
     await p.waitForTimeout(250);
