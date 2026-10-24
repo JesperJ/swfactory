@@ -1,6 +1,6 @@
 ---
 title: Start work from the dashboard
-status: reviewing
+status: done
 priority: P1
 summary: Tap Build on a feature and a real Claude session starts in that repo, via a host-side runner.
 ---
@@ -259,3 +259,15 @@ more here than the few seconds of latency it costs.
     through `tmux -e`, which the hook has always read. The runner knows the feature; it should
     say so rather than leave the dashboard to infer it from a branch name.
   126 tests, typecheck clean.
+- 2026-10-24 **Passed.** All 10 criteria met, the last two measured rather than asserted — a
+  session visible and linked in 8s against a 30s bar, and the runner surviving the dashboard
+  being stopped and reclaiming 8s after it returned. Reboot survival is ticked with its
+  condition stated: `Linger=no` means the runner starts at login, not at boot.
+  Two review rounds (`reviews/005-round-1.md`, `-2.md`): round 1 returned 5 blocking, round 2
+  returned 1 — the job lifecycle never closing — which was escalated and answered with both
+  mechanisms, tmux reconciliation and a time-bound guard.
+  Worth recording for whoever reads this later: going to *verify* the last two criteria is what
+  found that every `spec`, `plan` and `review` job had been failing since 013 landed, and then
+  that the fix for it broke session linking. Neither was visible from the tests, which passed
+  throughout. The criteria were not paperwork; they were the only thing pointed at the path
+  nobody was exercising.
