@@ -230,3 +230,19 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   the criterion is not merely unmet, it is unreachable without changing how a row is built.
   So the question is not "is it done" but "was 12 the right number", which is a judgement about
   density against readability and belongs to the user.
+- 2026-10-24 Round 1 (`reviews/012-round-1.md`): 1 blocking, 4 minor across three reviewers.
+  Escalated rather than reworked, because the one criterion blocking a pass needs a judgement
+  about what it should measure, and the rest cannot be ticked until that is settled.
+  The blocking finding is already fixed on `main` and is really about process: the `nowrap` bug
+  that broke a phone layout shipped unverified, because `npm run shoot` ran against a dashboard
+  that happened to have no failed job in it, and was then fixed incidentally inside 013's
+  rework. A visual check that only exercises whatever state exists is not a check.
+  New, and in no earlier log: **the table overflows at exactly its own breakpoint.** Table and
+  sidebar both switch at 900px, so the table turns on at the width where the 248px sidebar
+  leaves it least room — measured `scrollWidth 935 > innerWidth 900`, and rows at 100–140px
+  from 950–1100px. That is the phone failure mode the spec explicitly set out to avoid,
+  happening on desktop. `shoot` misses it because it only photographs 390 and 1366.
+  Queued for the rework once the density question is answered: the 900px breakpoint, `esc()` on
+  the lifecycle strip's `aria-label` (the only unescaped interpolation in the file), a colour
+  for `.prio.p-P3`, keyboard reachability for the row's open-spec affordance, and widening
+  `shoot` beyond two widths.
