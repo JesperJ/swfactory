@@ -427,3 +427,47 @@ test("the page is told which build it is running, and assets always revalidate",
   assert.equal(asset.headers.get("cache-control"), "no-cache");
   assert.equal(asset.headers.get("etag"), `W/"${state.build}"`);
 });
+
+// --- round 1's minors ----------------------------------------------------------------------
+
+test("a revalidation carrying the current etag is answered 304, not with the whole file", async () => {
+  // Round 1 measured a request with the exact etag just issued coming back 200 and 34KB:
+  // serveStatic does no conditional handling, so "always ask, a 304 is fine" was never true.
+  const app = setup();
+  const cookie = await login(app);
+  const first = await app.request("/app.js", { headers: { cookie } });
+  const etag = first.headers.get("etag")!;
+  assert.ok(etag, "there is no revalidation to answer without one");
+
+  const again = await app.request("/app.js", { headers: { cookie, "If-None-Match": etag } });
+  assert.equal(again.status, 304);
+  assert.equal(await again.text(), "", "a 304 carries no body");
+  assert.equal(again.headers.get("etag"), etag, "the validator is repeated so the cache keeps it");
+
+  // A stale validator must still get the file.
+  const stale = await app.request("/app.js", { headers: { cookie, "If-None-Match": 'W/"deadbeef"' } });
+  assert.equal(stale.status, 200);
+  assert.ok((await stale.text()).length > 0);
+});
+
+test("a 404 does not carry a validator for a body it does not have", async () => {
+  const app = setup();
+  const cookie = await login(app);
+  const res = await app.request("/nope.js", { headers: { cookie } });
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get("etag"), null);
+});
+
+test("the page is stamped with the build that served it", async () => {
+  // The baseline has to come from the same response as the code. Taking it from the first id
+  // the server reports loses a page that boots across a rebuild: it adopts the new id and then
+  // never reloads, which is the one failure this whole feature exists to prevent.
+  const app = setup();
+  const cookie = await login(app);
+  const state = await (await app.request("/api/state", { headers: { cookie } })).json();
+  const page = await app.request("/", { headers: { cookie } });
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, new RegExp(`<meta name="build" content="${state.build}">`));
+  assert.equal(page.headers.get("cache-control"), "no-cache", "the document must revalidate too");
+});

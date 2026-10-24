@@ -18,10 +18,18 @@ export function buildId(dir: string): string {
     for (const name of readdirSync(d).sort()) {
       const full = join(d, name);
       const rel = prefix ? `${prefix}/${name}` : name;
-      if (statSync(full).isDirectory()) walk(full, rel);
-      else {
+      // A dangling symlink or an unreadable file must not stop the server booting: without
+      // this, one bad entry under public/ throws out of createApp and nothing serves at all.
+      // The path still goes into the hash, so the file appearing or disappearing is a change.
+      try {
+        if (statSync(full).isDirectory()) walk(full, rel);
+        else {
+          hash.update(rel);
+          hash.update(readFileSync(full));
+        }
+      } catch {
         hash.update(rel);
-        hash.update(readFileSync(full));
+        hash.update("<unreadable>");
       }
     }
   };
