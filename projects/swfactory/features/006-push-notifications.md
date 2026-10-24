@@ -260,3 +260,19 @@ applies. If that happens, the fix is a global rate limit, not a longer per-sessi
   review first, but a third round is itself an escalation trigger and round 3 would re-review
   fixes that are already tested and verified while leaving the phone criteria exactly where
   they are. The decision is whether to do the phone walkthrough or narrow the two criteria.
+- 2026-10-24 Approve → escalate, again, and for the same reason as before: the two remaining
+  criteria need a human holding a phone.
+  What changed since the last escalation: `NTFY_TOPIC` and `FACTORY_PUBLIC_URL` are now set and
+  the dashboard is running with notifications enabled. Both triggers were exercised through
+  their real code paths, not simulated — a job driven to `failed` through
+  `POST /api/jobs/:id/status`, and a `needs_you` session through `POST /api/hooks` with a
+  permission-prompt payload. Neither logged a send failure, and the notifier only logs
+  failures, so both sent.
+  That is as far as this side can go. "Produced a notification **on my phone**" cannot be
+  verified from here: sending and arriving are different claims, and only the person
+  subscribed can tell them apart.
+  Deliberately not running review round 3. The round 2 file predates the last build, which the
+  rules say means review first — but the build after it closed round 2's findings, a third
+  round is itself an escalation trigger, and no reviewer can settle a criterion about a phone.
+  Running it would cost three agents to re-read code that is already tested and leave both
+  criteria exactly where they are.
