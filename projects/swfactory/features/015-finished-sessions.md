@@ -52,6 +52,12 @@ built for acting.
 - [ ] A session for a feature that is not `done` and finished minutes ago still ranks, so the
       inbox-replacing behaviour is not lost
 - [ ] The rules live in `rankNext` with tests, not in the view
+- [ ] A session idle longer than `SESSION_IDLE_HOURS` is ended and its job closed
+- [ ] A `needs_you` session is never ended, however long it has waited
+- [ ] An attached session is never ended, however long it has been idle
+- [ ] Ending a session is logged with which session and why, never silently
+- [ ] The Next window and the end-session timeout are separate constants, and a change to one
+      does not change the other
 
 ## The cause, not just the symptom
 You asked why a session is open at all when its feature is done. It genuinely is: all four tmux
@@ -72,10 +78,19 @@ A session with nothing pending should end; a session waiting on a human must not
 tell them apart — `needs_you` versus `your_turn` is exactly that distinction, and it already has
 both the session name and the job.
 
-**Proposed, and the part most worth challenging:** when reconcile sees a job whose session has
-been `your_turn` for longer than the Next window, and no newer event has arrived, it kills that
-tmux session and closes the job. A `needs_you` session is never killed. An attached session is
-never killed, because someone is in it.
+**Decided:** when reconcile sees a session that has been `your_turn` for longer than
+`SESSION_IDLE_HOURS` (8) with no newer event, it kills that tmux session and closes its job.
+
+Three guards, and each exists because of something that nearly happened:
+- **A `needs_you` session is never ended.** It is waiting on a person, which is the entire
+  reason tmux was chosen over headless.
+- **An attached session is never ended.** When this was proposed, the 006 session from the
+  previous evening was attached — the user was sitting in it. Without this guard, shipping the
+  rule would have closed the terminal they were working in.
+- **A separate, longer timeout than the Next window**, not the same one. Hiding a row and
+  destroying a session are different acts and deserve different thresholds: 2 hours to leave
+  Next, 8 hours to be ended. Reusing one number would mean a tightening of the display rule
+  silently became a more aggressive kill rule.
 
 ## Out of scope
 - Changing what the Inbox shows. It is the log; this is about Next.
@@ -85,8 +100,8 @@ never killed, because someone is in it.
 
 ## Open questions
 These are the calls I made. Each is a decision to overturn, not a question to answer.
-- **Two hours for `your_turn`.** Long enough to survive lunch, short enough that yesterday's
-  sessions are gone. The number is a guess; the shape — much shorter than `needs_you` — is not.
+- **Two hours for `your_turn` in Next, eight before a session is ended.** Both numbers are
+  guesses; the shapes are not — much shorter than `needs_you`, and hiding long before killing.
 - **`done` suppresses, rather than the session being dismissed when a feature is approved.**
   Suppressing is one rule in one place; dismissing on approve means `approve` reaching into
   session state, which couples two things that are currently independent.
