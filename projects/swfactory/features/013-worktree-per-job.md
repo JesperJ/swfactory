@@ -1,6 +1,6 @@
 ---
 title: A worktree per job
-status: building
+status: reviewing
 priority: P1
 summary: The runner builds in its own git worktree instead of the shared checkout, so jobs can't collide with each other or with me.
 ---
