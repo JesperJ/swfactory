@@ -219,3 +219,14 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   runner then started as `/factory review 005` in this checkout while it was on the 012 branch.
   Killed before it did anything and the runner stopped. Nothing was committed. That is the
   worktree hazard, caused this time by a test of the very button that causes it.
+- 2026-10-24 Approve → escalate. One criterion is genuinely unmet and there is no review round
+  at all, either of which alone forbids a pass.
+  Measured on the live dashboard at 1366×860: 11 rows, **8 fit without scrolling**, row heights
+  82 82 82 82 84 103 84 82 81 62 61. Three rows carry a failure block.
+  **This corrects what I wrote when building it.** I claimed rows without a failure block were
+  "around 50px, where 12 would fit". They are 81–84px. Only the last two — short titles, no
+  action — come in at ~61px. The arithmetic was never checked: after the top bar, the sort
+  toggle and the header, roughly 700px is left for rows, so 12 rows needs ~58px each. At 82px
+  the criterion is not merely unmet, it is unreachable without changing how a row is built.
+  So the question is not "is it done" but "was 12 the right number", which is a judgement about
+  density against readability and belongs to the user.
