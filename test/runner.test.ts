@@ -275,3 +275,40 @@ test("the sweep leaves alone anything that is not a worktree", () => {
   sweepWorktrees(root);
   assert.equal(existsSync(stray), true);
 });
+
+test("a non-build job gets a detached tree, because the default branch is already checked out", () => {
+  // The 013 rework sent spec/plan/review to the default branch. git allows a branch in one
+  // worktree only, and the human's checkout has it — so every non-build job failed with
+  // "'main' is already used by worktree at ...". Three of the four commands, broken by a fix.
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  for (const command of ["spec", "plan", "review"] as const) {
+    const plan = worktreeFor(job({ command, feature: "001-a" }), root, base);
+    assert.equal(plan.detached, true, `${command} must not try to check out ${base}`);
+    const dir = ensureWorktree(repo, plan, base);
+    assert.equal(
+      execFileSync("git", ["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim(),
+      "HEAD",
+      "a detached tree reports HEAD, not a branch",
+    );
+    // The human's checkout keeps the branch.
+    assert.equal(branchOf(repo), base);
+  }
+});
+
+test("a build still takes the feature branch, not a detached tree", () => {
+  const plan = worktreeFor(job({ command: "build", feature: "001-a" }), "/wt", "main");
+  assert.equal(plan.branch, "feature/001-a");
+  assert.ok(!plan.detached);
+});
+
+test("the sweep never collects the detached base tree", () => {
+  // It belongs to no feature and has no branch to merge, so "merged" is meaningless for it.
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const dir = ensureWorktree(repo, worktreeFor(job({ command: "spec", feature: null }), root, base), base);
+  sweepWorktrees(root);
+  assert.equal(existsSync(dir), true, "the shared base tree must survive every sweep");
+});

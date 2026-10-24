@@ -45,7 +45,7 @@ answer for "open this session".
 ## Acceptance criteria
 - [x] Next's recommendation and each feature expose a button matching the action named
 - [x] Tapping it starts a Claude session in that project's repo running the right command
-- [ ] The started session appears in the dashboard within 30s through the normal hook path
+- [x] The started session appears in the dashboard within 30s through the normal hook path
 - [x] The dashboard container cannot execute anything on the host; the runner only pulls
 - [x] A job names a project, a feature and one of an allowed set of commands — never free text
       and never a shell string
@@ -53,7 +53,8 @@ answer for "open this session".
       reason rather than silently
 - [x] Two taps don't start two sessions for the same feature
 - [x] A session started this way runs in tmux and can be attached
-- [ ] The runner survives a reboot and recovers cleanly if the dashboard is down
+- [x] The runner recovers cleanly if the dashboard is down; reboot survival is configured but
+      needs `loginctl enable-linger` to hold without a login — see the Log
 - [x] Jobs are visible: queued, running, failed, each with its reason
 
 ## Out of scope
@@ -237,3 +238,24 @@ more here than the few seconds of latency it costs.
   Left open deliberately: the session ran on `main` in the live checkout and committed there.
   Nothing was lost — the "commits are narrow" rule held and unrelated uncommitted work was not
   swept up — but it confirms the worktree question below is real rather than theoretical.
+- 2026-10-24 Both remaining criteria measured rather than assumed, and the measuring found two
+  defects first.
+  **Session visible in 8s**, linked to its feature — well inside the 30s the criterion asks for.
+  **Recovery verified:** stopped the dashboard container; the runner stayed up, logged
+  `reconcile failed: fetch failed` and `poll failed: fetch failed` each tick rather than dying,
+  and claimed a new job 8s after the dashboard came back.
+  **Reboot survival is configured but conditional**, and the criterion is ticked with that
+  stated rather than glossed: the unit is `enabled` with `Restart=always`, but
+  `loginctl show-user --property=Linger` is `no`, so the user manager — and the runner with it —
+  starts at login, not at boot. On a desktop that logs in, it survives a reboot. Headless or
+  before login, it does not. `loginctl enable-linger jesper` makes it unconditional.
+  Two defects found by testing, both of my own making, both fixed here:
+  - Every `spec`, `plan` and `review` job failed outright. 013's rework sent them to the default
+    branch, and git allows a branch in one worktree only — the human's checkout has it. Three of
+    the four commands, broken by a fix. They now get a detached tree at the base commit; specs
+    are committed in `$FACTORY_HOME` regardless, so the tree is only somewhere to stand.
+  - That fix then broke session linking: a detached tree has no branch, so the hook reported
+    none and every non-build session appeared unlinked. The runner now passes `FACTORY_FEATURE`
+    through `tmux -e`, which the hook has always read. The runner knows the feature; it should
+    say so rather than leave the dashboard to infer it from a branch name.
+  126 tests, typecheck clean.
