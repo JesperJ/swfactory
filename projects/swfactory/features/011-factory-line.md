@@ -69,7 +69,7 @@ not to remove the last decision. Merging stays mine, with the findings already a
 
 ## Acceptance criteria
 - [x] `/factory <sub>` replaces the five loose commands; the old names stop existing
-- [ ] `/factory next` acts on the dashboard's top recommendation without being told which it is
+- [x] `/factory next` acts on the dashboard's top recommendation without being told which it is
 - [x] `reviewing` is a real status: parsed, ranked, and coloured in the dashboard
 - [x] `/factory build` leaves a feature at `reviewing`, never at `done`
 - [x] Reviewers run in parallel and write findings to a per-round file, kept in git
@@ -213,3 +213,17 @@ the thing that actually drifted.
   do. Spawning by type therefore failed outright, twice, and the review would silently not
   happen. It now spawns general-purpose agents and tells each to read its reviewer definition
   from disk, which works either way and keeps the definitions the single source of truth.
+- 2026-10-24 `/factory next` run for the first time, closing its criterion. It read the ranking
+  from `/api/state`, took the top unblocked item, and dispatched on `kind` — twice landing on a
+  kind no sub-command can serve, and stopping with the session named rather than routing it
+  somewhere that would refuse it. That is the behaviour round 1 of 005 forced into the dispatch
+  table, working.
+  It also surfaced two things nothing else had:
+  - The top of the ranking was `notify-proof`, the synthetic session I posted hours earlier to
+    prove the notification path fired and never cleared. It had outranked every real piece of
+    work since 12:15, which is exactly what a blocked session should do — pointed at nothing.
+    Test data left in a live system is indistinguishable from the real thing, by design.
+  - With that cleared, the top four are finished sessions wanting a read. 007 and 010 have
+    complete specs sitting on unmerged feature branches while the dashboard still calls them
+    `idea` — they ran before the `$FACTORY_HOME` rule landed, so their specs went where nothing
+    reads them. The rule is right; these two predate it and need collecting by hand.
