@@ -166,7 +166,7 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 
 /* Desktop */
 @media (min-width: 900px) {
-  .shell { display: grid; grid-template-columns: var(--sidebar) 1fr; }
+  .shell { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); }
   .tabbar { display: none; }
   .sidebar {
     display: flex; flex-direction: column; gap: 20px;
@@ -431,10 +431,12 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 
 /* A failed job explains itself in visible text and offers the retry the store already allows.
    The reason used to live in a title attribute, which does not exist on touch. */
-.jobfail { display: grid; gap: 8px; justify-items: end; }
+/* Inline rather than stacked: the reason and its retry button on one line keep a failure row
+   close to a normal row's height, which is what the density criterion actually asks for. */
+.jobfail { display: flex; align-items: baseline; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .jobfail-why {
-  margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-2); text-align: left;
-  width: 100%; overflow-wrap: anywhere;
+  margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-2); text-align: left;
+  flex: 1 1 12ch; min-width: 0; overflow-wrap: anywhere;
 }
 .jobfail-why b { color: var(--needs); }
 .btn.retry { border-color: var(--needs); color: var(--needs); }
@@ -453,7 +455,7 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
   background: var(--surface); border-top: 1px solid var(--border); cursor: pointer;
 }
 .nexttable tbody tr:hover { background: var(--surface-2); }
-.nexttable td { padding: 10px; vertical-align: middle; }
+.nexttable td { padding: 6px 10px; vertical-align: middle; line-height: 1.35; }
 /* Never display:flex on a td — it removes the cell from table layout and every column stops
    aligning. The flex box goes inside the cell instead. */
 .nexttable td.c-do { white-space: nowrap; }
@@ -463,6 +465,23 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .nexttable .ftitle { display: block; overflow: hidden; text-overflow: ellipsis; }
 .nexttable .fid { font: 12px var(--mono); color: var(--text-3); margin-right: 6px; }
 .nexttable .c-why { color: var(--text-3); font-size: 13px; }
+.nexttable .c-why .failed { color: var(--needs); }
+/* Desktop only: fixed layout so columns honour their widths and ellipsis works. Without it a
+   nowrap cell demands its content width and pushes the table past the viewport. Scoped to the
+   width where the table is actually a table — below that the cells are blocks and these widths
+   would fight `width: 100%` and overflow instead. */
+@media (min-width: 1100px) {
+  .nexttable { table-layout: fixed; }
+  /* One line, ellipsised — a wrapping title was most of a row's height. Only where the table
+     is a table: in the stacked layout a nowrap cell's min-content width is the whole sentence,
+     which forces the shell's grid column open and overflows the viewport. */
+  .nexttable .ftitle, .nexttable .c-why { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nexttable .c-do { width: 9em; }
+  .nexttable .c-project { width: 10em; }
+  .nexttable .c-prio { width: 4em; }
+  .nexttable .c-status { width: 7.5em; }
+  .nexttable .c-action { width: 11em; }
+}
 /* nowrap keeps the button on one line, but a failure reason is prose and must wrap: round 1
    found it forcing the page to 1384px at 375px wide, making the one thing the criterion
    promises you can read the one thing you cannot. Only the button resists wrapping. */
@@ -481,7 +500,10 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 
 /* Phone: the same rows, stacked. A seven-column table at 390px means sideways scrolling,
    which is worse than the list it replaced. */
-@media (max-width: 899px) {
+/* 1100px, not 900px. The sidebar also switches at 900px and takes a fixed 248px, so a table
+   that turned on there turned on exactly where it had least room — 935px of content in a
+   900px window. The table now stays stacked until there is room for columns. */
+@media (max-width: 1099px) {
   .nexttable thead { display: none; }
   .nexttable, .nexttable tbody, .nexttable tr, .nexttable td { display: block; width: 100%; }
   .nexttable tbody tr {
@@ -526,3 +548,8 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
   .lifecycle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 4px; }
   .lc-arrow { display: none; }
 }
+
+/* P3 had no colour and read as "no priority at all". It is a priority, just the quiet one. */
+.prio.p-P3 { background: color-mix(in srgb, var(--text-3) 16%, transparent); color: var(--text-2); }
+/* A focused row must be visibly focused, now that it is reachable by keyboard. */
+.nexttable tbody tr:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
