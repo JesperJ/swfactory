@@ -1,6 +1,6 @@
 ---
 title: Next as a table, and the lifecycle made visible
-status: reviewing
+status: done
 priority: P1
 summary: Next becomes a scannable table, and Projects gains a lifecycle strip showing the stages and where work sits.
 ---
@@ -275,3 +275,14 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   earned itself immediately: it caught three regressions my own first fix introduced, including
   one where a `nowrap` I added forced the shell's grid column 528px past the viewport — found
   by measuring which element was wide, not by guessing. 123 tests, typecheck clean.
+- 2026-10-24 **Passed.** All 18 criteria met, 123 tests, typecheck clean, `shoot` clean at 15
+  widths. Merged as PR #10.
+  Against `reviews/012-round-1.md`: the one blocking finding was the `nowrap` bug that shipped
+  unverified, and the rework fixed the reason it shipped rather than only the bug — `shoot` now
+  checks 15 widths instead of photographing two, and caught three regressions in this very
+  rework. Every minor finding is closed: the `aria-label` escape, the P3 colour, keyboard
+  reachability, and the 900px breakpoint collision the review found and the spec never imagined.
+  The density criterion that blocked the first approve was replaced rather than met. A fixed row
+  count on a fixed viewport measured how many jobs happened to be failing; row height measures
+  the table. Worth remembering as a pattern: a criterion that cannot be met is sometimes the
+  wrong criterion, and that is an escalation rather than a quiet re-tick.
