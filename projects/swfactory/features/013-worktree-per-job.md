@@ -187,3 +187,20 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   Cleanup is guarded four ways and tested on each: it keeps a dirty tree, keeps an unmerged
   branch, keeps the base tree, and refuses any path git does not itself list as a worktree. It
   never passes `--force`. 120 tests, typecheck clean.
+- 2026-10-24 Review round 1 (`reviews/013-round-1.md`): 4 blocking, 15 minor across three
+  reviewers. Escalated rather than reworked, because one blocking finding changes the feature's
+  premise rather than its code. review-ux 2: the session now writes specs inside the worktree
+  and commits them to an unmerged branch, while the dashboard reads `SPECS_DIR` in the shared
+  checkout — so the dashboard no longer sees the work it starts. Live proof on this machine:
+  007 and 010 are `specced` in their worktrees and `idea` on the dashboard, which keeps
+  recommending "Spec it" for both. During a build, tasks never tick. The spec's What and Out of
+  scope never considered where specs land once the session stopped sharing my checkout, so this
+  is a spec decision, not a bug fix.
+  The other three blocking findings are local and reworkable once that call is made:
+  review-code 1, cleanup is attempted only in the tick a session ends, which is always before
+  the human merges, so a worktree per feature accumulates forever (006 and 012 are merged,
+  clean and still present); review-code 2, `worktreeFor` ignores `job.command`, so `spec` and
+  `plan` jobs land on a feature branch the What table says should be the default branch;
+  review-ux 1, `white-space: nowrap` on `.c-action` means a failure reason blows the layout to
+  1384px at 375px width, so the reason the criterion promises is the one thing unreadable.
+  Also noted: PR #7 is already merged into `main`, so all of this has landed.
