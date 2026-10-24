@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store, isJobCommand, STALE_JOB_HOURS } from "../src/db.ts";
+import { Store, isJobCommand, STALE_JOB_HOURS, type SessionStatus } from "../src/db.ts";
 
 const job = { project: "shop", feature: "003-login", command: "build" as const };
 
@@ -138,4 +138,40 @@ test("listRunning returns exactly the jobs the runner should reconcile", () => {
   s.setJobStatus(a.id, "running");
   s.setJobStatus(b.id, "done");
   assert.deepEqual(s.listRunning().map((j) => j.feature), ["001-a"]);
+});
+
+// --- what the runner is allowed to end -----------------------------------------------------
+
+test("idleSessions returns only your_turn sessions past the threshold, and never a dismissed one", () => {
+  const st = new Store(":memory:");
+  const now = new Date("2026-10-24T14:00:00.000Z");
+  const ago = (h: number) => new Date(now.getTime() - h * 3600_000).toISOString();
+  const put = (id: string, status: SessionStatus, hoursAgo: number) =>
+    st.upsert({ id, event: "Stop", status, branch: "feature/001-a" }, ago(hoursAgo));
+
+  put("old", "your_turn", 20);
+  put("recent", "your_turn", 1);
+  put("blocked", "needs_you", 20);
+  put("working", "working", 20);
+  put("over", "ended", 20);
+
+  assert.deepEqual(st.idleSessions(8, now).map((s) => s.id), ["old"]);
+
+  // Dismiss is the obvious remedy for a stale row, and round 1 found it did nothing about that
+  // row's standing authority to kill a tmux session every ten seconds. It must revoke it.
+  st.dismiss("old");
+  assert.deepEqual(st.idleSessions(8, now), [], "a dismissed row is not a kill candidate");
+});
+
+test("idleSessions ships only what the runner needs to identify a session", () => {
+  // The row carries the user's prompt and Claude's last message. A response that authorises
+  // destroying a process has no business containing either.
+  const st = new Store(":memory:");
+  const now = new Date("2026-10-24T14:00:00.000Z");
+  st.upsert(
+    { id: "s", event: "Stop", status: "your_turn", branch: "feature/001-a", prompt: "something private", message: "a long answer" },
+    new Date(now.getTime() - 20 * 3600_000).toISOString(),
+  );
+  const [row] = st.idleSessions(8, now);
+  assert.deepEqual(Object.keys(row).sort(), ["branch", "cwd", "feature_hint", "id", "repo", "status", "status_since"]);
 });

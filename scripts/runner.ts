@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadProjects, normalizeRepo, type Project } from "../src/specs.ts";
-import { JOB_COMMANDS, type Job, type Session } from "../src/db.ts";
+import { JOB_COMMANDS, type IdleSession, type Job, type Session } from "../src/db.ts";
 import { linkSession } from "../src/match.ts";
 
 const run = promisify(execFile);
@@ -322,70 +322,112 @@ async function reconcile(): Promise<void> {
 // Which sessions are candidates is decided here, away from tmux, because it is the part worth
 // testing hardest: ending a session is destructive and unrecoverable.
 //
-//   - Only `your_turn`. A `needs_you` session is blocked on a person, which is the entire
-//     reason tmux was chosen over headless. The endpoint already filters on this; so does
-//     this function, because a destructive act should not rest on one component's filter.
-//   - Only a session the runner could have named itself. Without a project and a feature there
-//     is no tmux name to act on, and guessing one risks killing something else entirely.
+// Round 1 found the guards were the wrong ones. They were cheap to check and did not carry the
+// weight: the status was verified twice while the *age* — the only condition that makes a kill
+// safe — was taken from the dashboard on faith, and the target was a tmux **name** rather than
+// the session the row described. A name is many-to-one and a row is never retired, so a stale
+// `your_turn` row became a standing kill order: tap Build on that feature a week later and the
+// fresh, actively-working session died within a tick. The dry run in the spec had already shown
+// three different rows resolving to one name; nobody read it as the defect it was.
 //
-// The third guard — never an attached session — cannot live here: it needs tmux.
-export function idleCandidates(sessions: Session[], projects: Project[]): { session: Session; name: string }[] {
-  const out: { session: Session; name: string }[] = [];
+// So, in order:
+//   - Only `your_turn`. A `needs_you` session is blocked on a person, which is the entire
+//     reason tmux was chosen over headless.
+//   - Only past the threshold, re-checked here. The dashboard filters too; a destructive act
+//     must not rest on one component's filter being right.
+//   - Only a session the runner could have named itself.
+//   - Only a name no *other* live session is using for something that is not idle.
+export function idleCandidates(
+  sessions: IdleSession[],
+  projects: Project[],
+  hours: number,
+  now = new Date(),
+): { session: IdleSession; name: string }[] {
+  const cutoff = now.getTime() - hours * 3600_000;
+  const out: { session: IdleSession; name: string }[] = [];
+  // A name another row claims while being anything but idle is a name with a live owner.
+  const busy = new Set<string>();
+  for (const s of sessions) {
+    if (s.status === "your_turn") continue;
+    const { project, feature } = linkSession(s as Session, projects);
+    if (project && feature) busy.add(sessionName({ project, feature } as Job));
+  }
+
   for (const s of sessions) {
     if (s.status !== "your_turn") continue;
-    const { project, feature } = linkSession(s, projects);
+    const since = new Date(s.status_since ?? "").getTime();
+    // An unparseable or future timestamp is not evidence of idleness.
+    if (!Number.isFinite(since) || since > cutoff) continue;
+    const { project, feature } = linkSession(s as Session, projects);
     if (!project || !feature) continue;
-    out.push({ session: s, name: sessionName({ project, feature } as Job) });
+    const name = sessionName({ project, feature } as Job);
+    if (busy.has(name)) continue;
+    out.push({ session: s, name });
   }
   return out;
 }
 
 async function endIdleSessions(): Promise<void> {
-  let sessions: Session[] = [];
+  let sessions: IdleSession[] = [];
   try {
     const res = await fetch(`${BASE}/api/sessions/idle?hours=${SESSION_IDLE_HOURS}`, { headers: auth });
     if (!res.ok) {
       console.error(`[runner] idle sessions: dashboard returned ${res.status}`);
       return;
     }
-    sessions = ((await res.json()) as { sessions?: Session[] }).sessions ?? [];
+    sessions = ((await res.json()) as { sessions?: IdleSession[] }).sessions ?? [];
   } catch (err) {
     console.error("[runner] idle sessions failed:", (err as Error).message);
     return;
   }
   if (!sessions.length) return;
 
-  for (const { session, name } of idleCandidates(sessions, loadProjects(SPECS_DIR))) {
-    if (!(await tmuxSessionExists(name))) continue;
-    if (await tmuxAttached(name)) {
-      console.log(`[runner] ${name} idle since ${session.status_since} but attached — leaving it alone`);
+  const now = new Date();
+  for (const { session, name } of idleCandidates(sessions, loadProjects(SPECS_DIR), SESSION_IDLE_HOURS, now)) {
+    const info = await tmuxSession(name);
+    if (!info) continue;
+    if (info.attached) {
+      console.log(`[runner] ${name} (session ${session.id}) idle since ${session.status_since} but attached — leaving it alone`);
+      continue;
+    }
+    // The identity check, and the reason this is not just a name lookup. A tmux session created
+    // *after* the row went idle cannot be the thing that went idle — it is a different session
+    // wearing the same name, and killing it destroys work in progress.
+    if (info.created.getTime() > new Date(session.status_since ?? 0).getTime()) {
+      console.log(
+        `[runner] ${name} started ${info.created.toISOString()}, after session ${session.id} went idle at ${session.status_since} — not the same session, leaving it alone`,
+      );
       continue;
     }
     try {
       await run("tmux", ["kill-session", "-t", `=${name}`], { timeout: 10_000 });
-      console.log(`[runner] ended ${name}: your_turn since ${session.status_since}, over ${SESSION_IDLE_HOURS}h, nothing pending`);
+      console.log(
+        `[runner] ended ${name} (session ${session.id}): your_turn since ${session.status_since}, over ${SESSION_IDLE_HOURS}h, nothing pending`,
+      );
     } catch (err) {
-      console.error(`[runner] could not end ${name}:`, (err as Error).message);
+      console.error(`[runner] could not end ${name} (session ${session.id}):`, (err as Error).message);
     }
   }
 }
 
-// Someone is looking at it. Never end a session a person is sitting in.
-//
-// `display-message -p -t` looks like the direct way to ask and is not: with no attached
-// client it prints an empty line for every session, so every session reads as attached and
-// nothing is ever ended. `list-sessions` with a format filter answers from the server.
-export async function tmuxAttached(name: string): Promise<boolean> {
+// What tmux knows about a session, or null if there is none by that name. One call rather than
+// three: round 1 pointed out that existence, attachment and the kill were separate invocations,
+// so attaching in the gap between them got your terminal killed — the exact scenario the attach
+// guard exists to prevent.
+export async function tmuxSession(name: string): Promise<{ attached: boolean; created: Date } | null> {
   try {
     const out = await run(
       "tmux",
-      ["list-sessions", "-F", "#{session_attached}", "-f", `#{==:#{session_name},${name}}`],
+      ["list-sessions", "-F", "#{session_attached} #{session_created}", "-f", `#{==:#{session_name},${name}}`],
       { timeout: 10_000 },
     );
-    // Empty means no session by that name — nothing to end, and not ours to guess about.
-    return out.stdout.trim() !== "0";
+    const line = out.stdout.trim();
+    if (!line) return null; // no session by that name
+    const [attached, created] = line.split(/\s+/);
+    return { attached: attached !== "0", created: new Date(Number(created) * 1000) };
   } catch {
-    return true; // cannot tell — assume someone is there, and leave it alone
+    // Cannot tell. Report it as attached and as new as possible, so every guard below refuses.
+    return { attached: true, created: new Date(8640000000000000) };
   }
 }
 

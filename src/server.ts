@@ -18,6 +18,12 @@ import { Notifier, fromEnv as notifierFromEnv } from "./notify.ts";
 const ROOT = resolve(fileURLToPath(import.meta.url), "../..");
 const PUBLIC = join(ROOT, "public");
 
+// A floor, not a default. `hours=0.0001` made every finished session a kill candidate at once,
+// so the one parameter on the path that ends processes is clamped rather than merely validated.
+// The runner's own threshold lives in the runner; this is the smallest window the dashboard will
+// answer for at all.
+const MIN_IDLE_HOURS = 1;
+
 export interface Config {
   specsDir: string;
   store: Store;
@@ -173,9 +179,12 @@ export function createApp(cfg: Config) {
 
   // The runner asks which sessions are idle rather than deciding for itself: the dashboard owns
   // session state, and a second opinion about what counts as idle is how two components drift.
+  // It re-checks the age anyway before acting — this answer authorises destroying a process.
   app.get("/api/sessions/idle", requireBearer(cfg.runnerToken), (c) => {
-    const hours = Number(c.req.query("hours") ?? 8);
-    if (!Number.isFinite(hours) || hours <= 0) return c.json({ error: "hours must be a positive number" }, 400);
+    const raw = c.req.query("hours");
+    const hours = raw === undefined ? MIN_IDLE_HOURS : Number(raw);
+    if (!Number.isFinite(hours) || hours < MIN_IDLE_HOURS)
+      return c.json({ error: `hours must be a number >= ${MIN_IDLE_HOURS}` }, 400);
     return c.json({ sessions: cfg.store.idleSessions(hours) });
   });
 

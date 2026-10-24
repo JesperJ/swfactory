@@ -427,3 +427,27 @@ test("the page is told which build it is running, and assets always revalidate",
   assert.equal(asset.headers.get("cache-control"), "no-cache");
   assert.equal(asset.headers.get("etag"), `W/"${state.build}"`);
 });
+
+test("the idle-sessions endpoint is reachable only with the runner token, and clamps its window", async () => {
+  // This endpoint's answer authorises the runner to destroy processes, so it is the one route
+  // where a regression in machineRoute would be silent. Round 1 verified the auth by hand and
+  // asked for the assertion.
+  const app = setup();
+  const cookie = await login(app);
+  const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
+
+  assert.equal((await app.request("/api/sessions/idle")).status, 401);
+  assert.equal((await app.request("/api/sessions/idle", { headers: { cookie } })).status, 401, "a UI cookie is not enough");
+  assert.equal((await app.request("/api/sessions/idle", { headers: bearer("tok") })).status, 401, "the hook token is not enough");
+  assert.equal((await app.request("/api/sessions/idle", { headers: bearer("run") })).status, 200);
+  // machineRoute is an exact match, so near-misses must fail closed rather than open.
+  assert.equal((await app.request("/api/sessions/idle/", { headers: bearer("run") })).status, 401);
+
+  // hours is clamped, not merely validated: hours=0.0001 made every finished session a kill
+  // candidate at once.
+  for (const bad of ["0.0001", "0", "-5", "abc", ""]) {
+    const res = await app.request(`/api/sessions/idle?hours=${bad}`, { headers: bearer("run") });
+    assert.equal(res.status, 400, `hours=${bad} must be refused`);
+  }
+  assert.equal((await app.request("/api/sessions/idle?hours=8", { headers: bearer("run") })).status, 200);
+});

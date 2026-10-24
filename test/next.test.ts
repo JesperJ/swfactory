@@ -249,7 +249,7 @@ test("a session on a done feature never ranks, in either sort order", () => {
   assert.deepEqual(rankNext(projects, sessions, NOW).filter((i) => i.sessionId), []);
 });
 
-test("a your_turn session ages out after two hours, a needs_you session does not", () => {
+test("a your_turn session ages out after two hours, a blocked session never does", () => {
   const projects = [project("shop", [feature({ slug: "001-a", status: "building" })])];
   const fresh = session({ id: "fresh", project: "shop", feature: "001-a", status_since: hoursAgo(1) });
   const stale = session({ id: "stale", project: "shop", feature: "001-a", status_since: hoursAgo(3) });
@@ -257,11 +257,18 @@ test("a your_turn session ages out after two hours, a needs_you session does not
   assert.equal(rankNext(projects, [fresh], NOW).some((i) => i.sessionId === "fresh"), true);
   assert.equal(rankNext(projects, [stale], NOW).some((i) => i.sessionId === "stale"), false);
 
-  // Blocked is blocked however long it has waited — the 48-hour window is unchanged.
-  const blocked = session({ id: "b", project: "shop", feature: "001-a", status: "needs_you", status_since: hoursAgo(40) });
-  assert.equal(rankNext(projects, [blocked], NOW).some((i) => i.sessionId === "b"), true);
-  const ancient = session({ id: "old", project: "shop", feature: "001-a", status: "needs_you", status_since: hoursAgo(60) });
-  assert.equal(rankNext(projects, [ancient], NOW).some((i) => i.sessionId === "old"), false);
+  // Blocked is blocked however long it has waited. Round 1 caught a 48-hour cutoff added here
+  // under a comment claiming nothing had changed — this test asserted the regression as if it
+  // were the status quo. The weekend case is the one that matters: a session blocked on a
+  // permission prompt on Friday must still be the top row on Monday.
+  for (const h of [40, 60, 24 * 14]) {
+    const blocked = session({ id: `b${h}`, project: "shop", feature: "001-a", status: "needs_you", status_since: hoursAgo(h) });
+    assert.equal(
+      rankNext(projects, [blocked], NOW).some((i) => i.sessionId === `b${h}`),
+      true,
+      `a session blocked ${h}h ago must still rank`,
+    );
+  }
 });
 
 test("the two windows are separate numbers, so tightening one does not move the other", () => {
