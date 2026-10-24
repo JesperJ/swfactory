@@ -566,3 +566,14 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
   box-shadow: var(--shadow-lg);
 }
 @media (min-width: 900px) { .update-banner { bottom: 24px; } }
+/* On a phone the sheet is a bottom sheet covering up to 92dvh, so a banner 80px off the bottom
+   floats 80px *inside* it — masking a strip of the spec you are reading, with nothing to scroll
+   it away. Round 1 measured it sitting on a line of prose at y=724 of an 844 viewport. An open
+   sheet moves it to the strip above the sheet instead. A control that exists so the page does
+   not interrupt you has no business interrupting you. */
+@media (max-width: 899px) {
+  body:has(.sheet.open) .update-banner {
+    top: calc(env(safe-area-inset-top) + 12px);
+    bottom: auto;
+  }
+}
