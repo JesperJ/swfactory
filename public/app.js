@@ -539,6 +539,43 @@ function enableSwipe() {
   });
 }
 
+// ---------- staying current ----------
+// This page never navigates, so without this it renders fresh data with whatever code it
+// loaded hours ago — which looks exactly like a bug, and was reported as one three times.
+let bootBuild = null;
+let differingReads = 0;
+let reloading = false;
+
+function checkBuild(build) {
+  if (!build) return;
+  if (bootBuild === null) {
+    bootBuild = build;
+    return;
+  }
+  if (build === bootBuild) {
+    differingReads = 0;
+    return;
+  }
+  // Twice in a row, so a server that flaps between versions cannot put the page in a loop.
+  if (++differingReads < 2 || reloading) return;
+  // Never yank the page out from under an open sheet or a tap that is still in flight.
+  if (sheetKey || queueInFlight) return showUpdateBanner();
+  reloading = true;
+  location.reload();
+}
+
+let queueInFlight = false;
+
+function showUpdateBanner() {
+  if ($("#update-banner")) return;
+  const b = document.createElement("button");
+  b.id = "update-banner";
+  b.className = "update-banner";
+  b.textContent = "New version — reload";
+  b.onclick = () => location.reload();
+  document.body.append(b);
+}
+
 // ---------- data ----------
 let loading = null;
 async function load() {
@@ -550,6 +587,7 @@ async function load() {
       if (res.status === 401) return void (location.href = "/login" + location.hash);
       if (res.ok) {
         state = await res.json();
+        checkBuild(state.build);
         render();
       }
     } finally {
@@ -569,8 +607,9 @@ function setLive(on) {
 function connect() {
   const es = new EventSource("/api/stream");
   let t;
-  es.addEventListener("hello", () => {
+  es.addEventListener("hello", (e) => {
     setLive(true);
+    checkBuild(e.data);
     load();
   });
   es.addEventListener("change", () => {
@@ -604,6 +643,7 @@ document.addEventListener("click", async (e) => {
     const [project, feature, command] = start.dataset.start.split("/");
     start.disabled = true;
     start.textContent = "Starting…";
+    queueInFlight = true;
     const res = await fetch("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -613,6 +653,7 @@ document.addEventListener("click", async (e) => {
       const { error } = await res.json().catch(() => ({ error: "could not queue" }));
       start.textContent = esc(error ?? "failed");
     }
+    queueInFlight = false;
     load();
     return;
   }
