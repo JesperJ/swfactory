@@ -11,8 +11,11 @@ import { FEATURE_STATUSES, type Feature, type Project } from "./specs.ts";
 export type LinkedSession = Session & SessionLink;
 
 export const STALE_DAYS = 7; // a `building` feature with no Log entry for this long has stalled
-// A blocked session stays urgent however long it has waited — it is still blocked.
-const NEEDS_YOU_WINDOW_MS = 48 * 3600_000;
+// There is deliberately no window for `needs_you`. Round 1 of 015 found a 48-hour cutoff added
+// here where none had ever existed, under a comment saying the opposite, with a test whose name
+// and comment both claimed nothing had changed. A session blocked on a person is the one row in
+// Next that must never go quiet: the user comes back after a weekend to be told what is waiting
+// on them, and 49 hours was enough for the answer to be "nothing".
 // A finished session means "it stopped and wants a read". After two hours the honest reading is
 // that it has been read or stopped mattering. 48h turned Next into a log once the runner made
 // finished sessions the common case rather than the rare one.
@@ -87,7 +90,6 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
     if (s.status !== "needs_you" && s.status !== "your_turn") continue;
     const idleMs = now.getTime() - new Date(s.status_since ?? s.updated_at).getTime();
     if (s.status === "your_turn" && idleMs > NEXT_FINISHED_HOURS * 3600_000) continue;
-    if (s.status === "needs_you" && idleMs > NEEDS_YOU_WINDOW_MS) continue;
     const p = projectOf(s.project);
     if (!p) continue;
     const f = featureOf(p, s.feature);
