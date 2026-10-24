@@ -23,6 +23,9 @@ Judge:
 5. **Noise.** Does it add something the user must read and decide about every time? That is a
    cost, and a recurring one.
 
+If the checkout has no installed dependencies — a worktree starts with source only — install
+them before running anything, or every check fails in a way that looks like broken code.
+
 If the project has `npm run shoot`, run it and look at what it produces rather than reasoning
 about the CSS.
 

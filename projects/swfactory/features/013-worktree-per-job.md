@@ -157,9 +157,11 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   merged and whose session is gone — the same reconcile pass that already closes finished jobs.
 - **A job that cannot get a clean worktree fails loudly rather than falling back to the shared
   checkout.** Falling back is what today's behaviour already is, and it is the bug.
-- **A fresh worktree has no `node_modules`.** The first `npm test` in one fails outright. The
-  runner could install on create, the build command could install when it finds none, or the
-  repo could be told to share a store. Not decided, and not guessed at here.
+- ~~**A fresh worktree has no `node_modules`.**~~ Settled: the session installs, not the runner.
+  The runner deals in git and tmux and has no business knowing which language a project is
+  written in, while the session is already in the repository and can see. `factory.md` and both
+  code-running reviewers now say so. Measured before and after on a fresh worktree: 15
+  `ERR_MODULE_NOT_FOUND` failures, then 123 passing.
 
 ## Log
 - 2026-10-24 Specced after the hazard fired three times in one day: a spec job committing to
@@ -223,3 +225,8 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   command in this very worktree. Recorded as an open question below rather than fixed here —
   whether the runner should install dependencies, or the build command should, is a real choice.
   123 tests, typecheck clean.
+- 2026-10-24 Closed the `node_modules` open question. The session installs dependencies when a
+  worktree has none, rather than the runner doing it on create: the runner is language-agnostic
+  by design and adding `npm ci` to it would make it know about npm, which is the wrong place for
+  that knowledge to live. Verified on a throwaway worktree — first `npm test` produced 15
+  `ERR_MODULE_NOT_FOUND`, and after installing, 123 passing.
