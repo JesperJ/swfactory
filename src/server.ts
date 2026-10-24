@@ -12,6 +12,7 @@ import { featureAction, lifecycleCounts, rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
+import { buildId } from "./build-id.ts";
 import { Notifier, fromEnv as notifierFromEnv } from "./notify.ts";
 
 const ROOT = resolve(fileURLToPath(import.meta.url), "../..");
@@ -31,6 +32,9 @@ export interface Config {
 
 export function createApp(cfg: Config) {
   const app = new Hono();
+  // Computed once: the files cannot change under a running container, so hashing per request
+  // would be real work for an answer that never varies.
+  const build = buildId(PUBLIC);
   const listeners = new Set<(event: string) => void>();
   // `notify` fans out to the browsers watching the SSE stream; `notifier` pushes to the phone.
   const notify = (event: string) => listeners.forEach((fn) => fn(event));
@@ -121,6 +125,7 @@ export function createApp(cfg: Config) {
       jobs: cfg.store.listJobs(),
       next: rankNext(projects, sessions),
       lifecycle: lifecycleCounts(projects),
+      build,
       now: new Date().toISOString(),
     });
   });
@@ -218,7 +223,7 @@ export function createApp(cfg: Config) {
       const send = (event: string) => void stream.writeSSE({ event: "change", data: event });
       listeners.add(send);
       stream.onAbort(() => void listeners.delete(send));
-      await stream.writeSSE({ event: "hello", data: "ok" });
+      await stream.writeSSE({ event: "hello", data: build });
       while (!stream.aborted) {
         await stream.sleep(25_000);
         await stream.writeSSE({ event: "ping", data: "" });
@@ -226,6 +231,15 @@ export function createApp(cfg: Config) {
     }),
   );
 
+  // Always revalidate. Served with only last-modified, a browser caches on a heuristic and can
+  // keep stale JavaScript indefinitely — which is how a fixed bug keeps being reported.
+  app.use("/*", async (c, next) => {
+    await next();
+    if (/\.(js|css|webmanifest)$/.test(c.req.path)) {
+      c.header("Cache-Control", "no-cache");
+      c.header("ETag", `W/"${build}"`);
+    }
+  });
   app.use("/*", serveStatic({ root: PUBLIC }));
 
   return { app, notify };

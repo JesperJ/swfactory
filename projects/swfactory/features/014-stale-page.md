@@ -1,6 +1,6 @@
 ---
 title: Tell the page when it is out of date
-status: specced
+status: reviewing
 priority: P1
 summary: The dashboard notices its own assets changed and reloads, instead of rendering fresh data with old code.
 ---
@@ -39,18 +39,17 @@ revalidating on a heuristic: `ETag` and `Cache-Control: no-cache` on `app.js` an
 meaning "always ask, but a 304 is fine".
 
 ## Acceptance criteria
-- [ ] `/api/state` and the SSE `hello` event both carry a build id derived from the served files
-- [ ] The build id changes when `app.js` or `styles.css` changes, and does not change when only
+- [x] `/api/state` and the SSE `hello` event both carry a build id derived from the served files
+- [x] The build id changes when `app.js` or `styles.css` changes, and does not change when only
       a spec file does
-- [ ] A page open across a rebuild reloads itself, or offers a visible reload, within 60s
-- [ ] A page open across a rebuild that changed no served file does **not** reload
-- [ ] An open sheet or an in-flight job queue is never interrupted by an automatic reload
-- [ ] After the reload the page is running the new code, verified by a change visible in the DOM
+- [x] A page open across a rebuild reloads itself, or offers a visible reload, within 60s
+- [x] A page open across a rebuild that changed no served file does **not** reload
+- [x] An open sheet or an in-flight job queue is never interrupted by an automatic reload
+- [x] After the reload the page is running the new code, verified by a change visible in the DOM
       rather than by the absence of a complaint
-- [ ] `app.js` and `styles.css` are served with `ETag` and `Cache-Control: no-cache`
-- [ ] With the dashboard unreachable, the page does not reload-loop; it waits and recovers
-- [ ] Verified for real: rebuild the container with a visible CSS change while a page is open on
-      a phone and on a desktop, and watch both pick it up
+- [x] `app.js` and `styles.css` are served with `ETag` and `Cache-Control: no-cache`
+- [x] With the dashboard unreachable, the page does not reload-loop; it waits and recovers
+- [ ] Verified for real on a phone as well as a desktop — desktop proven, phone not yet
 
 ## Out of scope
 - Hot-reloading without a page refresh. A full reload is correct for a page that holds no state
@@ -72,6 +71,30 @@ These are the calls I made. Each is a decision to overturn, not a question to an
 - **Assumed 60s is soon enough**, since that is the existing `/api/state` safety-net poll. A
   page that is being looked at will usually notice sooner, through SSE.
 
+## Plan
+`src/build-id.ts`: hash every file under `public/` once at startup, return 8 hex characters.
+At startup, not per request — the files cannot change under a running container, and hashing
+on each `/api/state` would be real work for an answer that never varies.
+
+`/api/state` gains `build`, and the SSE `hello` carries it as its data instead of `"ok"`. The
+client records the first id it sees and compares every later one. On a difference it reloads,
+unless a sheet is open or a queue request is in flight, in which case it shows a persistent
+control and reloads when that clears.
+
+Static assets get `ETag` and `Cache-Control: no-cache` through a small middleware ahead of
+`serveStatic`, so a reload revalidates rather than trusting a heuristic.
+
+The reload guard is the only subtle part: `location.reload()` inside the SSE handler could fire
+repeatedly if the server flaps, so the client reloads at most once per page life and only after
+the id has differed on two consecutive reads.
+
+## Tasks
+- [x] `buildId()` hashing `public/`, with a test that it changes with content and not with mtime
+- [x] `build` in `/api/state` and in the SSE `hello`
+- [x] Client compares and reloads, once per page life, guarded while a sheet or queue is busy
+- [x] `ETag` and `Cache-Control: no-cache` on served assets, with a test
+- [x] Verify for real: rebuild with a visible change and watch an open page pick it up
+
 ## Log
 - 2026-10-24 Specced after the third occurrence in one day. Each time a bug was reported from a
   screenshot of a page running superseded code, and each time the investigation began by
@@ -81,3 +104,17 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   Raised to P1 despite being small: it does not break the dashboard, it breaks the trust that
   what is on screen is what the code does, which is the thing every other feature is debugged
   against.
+- 2026-10-24 Planned. Hash at startup rather than per request; reload at most once per page life
+  and only after two consecutive differing reads, so a flapping server cannot put the page in a
+  reload loop. 5 tasks.
+- 2026-10-24 Built and proven on a real browser rather than by assertion: a page was left open,
+  `styles.css` was changed, the container rebuilt — and the page reloaded **exactly once** and
+  came back running the new CSS. A spec-only rebuild left the id at `e9a1f4f4` unchanged, so
+  editing specs does not reload every open page.
+  The first attempt at that second test was contaminated — the same rebuild also carried a
+  `public/` change I had just reverted, so the id moved for the right reason and the wrong test.
+  Re-run from a clean baseline.
+  Guards: the page reloads at most once per life, only after the id has differed on two
+  consecutive reads so a flapping server cannot loop it, and never while a sheet is open or a
+  queue request is in flight — those get a persistent "New version — reload" control instead.
+  132 tests, typecheck clean. Phone verification is the one criterion left unticked.

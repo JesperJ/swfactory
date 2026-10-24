@@ -416,3 +416,14 @@ test("with no next, signing in goes to the dashboard as before", async () => {
   });
   assert.equal(res.headers.get("location"), "/");
 });
+
+test("the page is told which build it is running, and assets always revalidate", async () => {
+  const app = setup();
+  const cookie = await login(app);
+  const state = await (await app.request("/api/state", { headers: { cookie } })).json();
+  assert.match(state.build, /^[0-9a-f]{8}$/, "the page needs an id to compare against");
+
+  const asset = await app.request("/app.js", { headers: { cookie } });
+  assert.equal(asset.headers.get("cache-control"), "no-cache");
+  assert.equal(asset.headers.get("etag"), `W/"${state.build}"`);
+});
