@@ -103,7 +103,8 @@ export function createApp(cfg: Config) {
   // Everything under /api needs the UI cookie except the two machine entrypoints, which carry
   // their own bearer tokens: the hooks, and the runner's claim/report pair under /api/jobs/.
   // POST /api/jobs itself is the UI queueing work, so it stays behind the cookie.
-  const machineRoute = (path: string) => path === "/api/hooks" || path.startsWith("/api/jobs/");
+  const machineRoute = (path: string) =>
+    path === "/api/hooks" || path.startsWith("/api/jobs/") || path === "/api/sessions/idle";
   app.use("/api/*", async (c, next) => (machineRoute(c.req.path) ? next() : ui(c, next)));
 
   app.get("/api/state", (c) => {
@@ -164,6 +165,14 @@ export function createApp(cfg: Config) {
   });
 
   app.get("/api/jobs/running", requireBearer(cfg.runnerToken), (c) => c.json({ jobs: cfg.store.listRunning() }));
+
+  // The runner asks which sessions are idle rather than deciding for itself: the dashboard owns
+  // session state, and a second opinion about what counts as idle is how two components drift.
+  app.get("/api/sessions/idle", requireBearer(cfg.runnerToken), (c) => {
+    const hours = Number(c.req.query("hours") ?? 8);
+    if (!Number.isFinite(hours) || hours <= 0) return c.json({ error: "hours must be a positive number" }, 400);
+    return c.json({ sessions: cfg.store.idleSessions(hours) });
+  });
 
   app.get("/api/jobs/next", requireBearer(cfg.runnerToken), (c) => {
     const job = cfg.store.claimNext();

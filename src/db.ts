@@ -167,6 +167,16 @@ export class Store {
     return this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as Session | undefined;
   }
 
+  // Sessions that finished and have sat untouched past `hours` — candidates for being ended.
+  // `needs_you` is deliberately excluded however long it has waited: it is blocked on a person,
+  // which is the entire reason sessions run in tmux rather than headless.
+  idleSessions(hours: number, now = new Date()): Session[] {
+    const before = new Date(now.getTime() - hours * 3600_000).toISOString();
+    return this.db
+      .prepare("SELECT * FROM sessions WHERE status = 'your_turn' AND COALESCE(status_since, updated_at) <= ? ORDER BY updated_at")
+      .all(before) as unknown as Session[];
+  }
+
   // Everything not dismissed, plus anything touched in the last `days`.
   list(days = 14): Session[] {
     const since = new Date(Date.now() - days * 86400_000).toISOString();

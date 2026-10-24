@@ -257,8 +257,12 @@ function renderNext() {
       job?.status === "failed"
         ? `<b class="failed">Failed.</b> ${esc(job.error ?? "no reason given")}`
         : esc(i.reason);
-    const open = i.url
-      ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener" data-seen="${esc(i.sessionId)}">Open ${icons.open}</a>`
+    // Every session row gets a control. Local sessions have no URL, and before this they
+    // rendered with nothing at all — unactionable rows in a view built for acting.
+    const open = i.sessionId
+      ? i.url
+        ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener" data-seen="${esc(i.sessionId)}">Open ${icons.open}</a>`
+        : `<button class="btn" data-dismiss="${esc(i.sessionId)}">Dismiss</button>`
       : "";
     return `<tr class="ntrow k-${esc(i.kind)}" data-open="${esc(link(i) ?? "#/inbox")}" tabindex="0" role="link" aria-label="${esc(`${i.action} ${i.title}`)}">
       <td class="c-do"><span class="dot k-${esc(i.kind)}"></span><b>${esc(i.action)}</b></td>
