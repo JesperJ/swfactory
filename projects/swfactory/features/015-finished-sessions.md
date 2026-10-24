@@ -53,9 +53,34 @@ built for acting.
       inbox-replacing behaviour is not lost
 - [ ] The rules live in `rankNext` with tests, not in the view
 
+## The cause, not just the symptom
+You asked why a session is open at all when its feature is done. It genuinely is: all four tmux
+sessions are alive, the 006 one since 22:21 the previous evening. Each finished its turn and is
+sitting at a prompt. **Nothing ever closes a session when its work is finished.**
+
+`/factory build` ends by saying the feature is ready for review, and then the session waits
+forever. The runner marks a *job* done when its tmux session disappears — but nothing makes it
+disappear. Sessions accumulate without limit.
+
+So the three rules above hide a growing pile rather than stop it growing. They are still worth
+having — a session for a `done` feature should not rank even if sessions are ended promptly —
+but on their own they would leave the dashboard honest and the machine full of idle sessions.
+
+The tension is real and is why this is not simply "kill it when the job finishes": tmux was
+chosen precisely so a session that stops for a permission prompt can be attached and answered.
+A session with nothing pending should end; a session waiting on a human must not. The runner can
+tell them apart — `needs_you` versus `your_turn` is exactly that distinction, and it already has
+both the session name and the job.
+
+**Proposed, and the part most worth challenging:** when reconcile sees a job whose session has
+been `your_turn` for longer than the Next window, and no newer event has arrived, it kills that
+tmux session and closes the job. A `needs_you` session is never killed. An attached session is
+never killed, because someone is in it.
+
 ## Out of scope
 - Changing what the Inbox shows. It is the log; this is about Next.
 - Auto-dismissing sessions. Disappearing from a ranking is not the same as being marked read.
+- Ending a session that is waiting on a human, or one someone is attached to.
 - Any change to how sessions are matched to features.
 
 ## Open questions
@@ -75,3 +100,8 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   is not work, and four of eight rows were unactionable.
   Measured at the time: sessions idle 76, 337, 337 and 1012 minutes, none with a URL, so none
   with any control in the table at all.
+- 2026-10-24 Scope widened after a second question: why is the session open at all if the
+  feature is done? Because it is — genuinely, still running, since the previous evening. The
+  three rules as first written hide a pile that keeps growing. The cause is that nothing ends a
+  session when its work ends, and that now sits in this spec rather than being discovered again
+  in a week.
