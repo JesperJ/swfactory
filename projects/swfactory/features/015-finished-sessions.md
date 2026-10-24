@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: specced
+status: planned
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -108,6 +108,33 @@ These are the calls I made. Each is a decision to overturn, not a question to an
 - **Dismiss rather than a "mark read".** Dismiss already exists, already persists, and already
   means exactly this. A second concept would need a reason to exist.
 
+## Plan
+Three changes in `src/next.ts`, one in `public/app.js`, one in `scripts/runner.ts`.
+
+`rankNext` gains two rules: skip a session whose feature is `done`, and age `your_turn` out at
+`NEXT_FINISHED_HOURS` (2) while `needs_you` keeps the existing 48. Both live beside the rules
+they qualify, not in the view, so they are unit-testable without a DOM.
+
+The table gives every session row a control: `Open session` where a URL exists, `Dismiss` where
+it does not. `startControl` already returns nothing for session kinds — the row renders a
+dismiss button directly instead.
+
+The runner gains `endIdleSessions`, called from the reconcile pass that already runs each tick.
+It ends a tmux session that has been `your_turn` longer than `SESSION_IDLE_HOURS` (8). It needs
+the dashboard to tell it which sessions those are, so `GET /api/jobs/running` is joined by
+`GET /api/sessions/idle`, behind the same runner token.
+
+The guards are the part worth testing hardest: never a `needs_you` session, never an attached
+one, and never silently.
+
+## Tasks
+- [ ] `rankNext`: a `done` feature's sessions do not rank, with a test
+- [ ] `rankNext`: `your_turn` ages out at 2h, `needs_you` keeps 48h, with tests
+- [ ] A dismiss control on every session row in the table, including those with no URL
+- [ ] `GET /api/sessions/idle` behind the runner token, listing candidates past the threshold
+- [ ] `endIdleSessions` in the runner: ends them, skips attached, logs each with its reason
+- [ ] Verify for real against the four sessions currently open
+
 ## Log
 - 2026-10-24 Specced after you asked why done features were sitting in Next. They were not
   features — they were sessions attached to them, which the blank Pri and Status columns show
@@ -120,3 +147,7 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   three rules as first written hide a pile that keeps growing. The cause is that nothing ends a
   session when its work ends, and that now sits in this spec rather than being discovered again
   in a week.
+- 2026-10-24 Planned. Two constants, deliberately separate: `NEXT_FINISHED_HOURS` (2) for
+  leaving Next, `SESSION_IDLE_HOURS` (8) for being ended. The runner asks the dashboard which
+  sessions are idle rather than deriving it, because the dashboard owns session state and a
+  second opinion about what counts as idle is how two components drift apart. 6 tasks.
