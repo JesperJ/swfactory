@@ -203,13 +203,19 @@ async function start(job: Job): Promise<void> {
   if (!project) throw new JobError(`unknown project ${job.project} in ${SPECS_DIR}`);
   if (!project.repoUrl) throw new JobError(`project ${job.project} has no repo: in project.md`);
 
+  const name = sessionName(job);
+  // A feature already has a live session: its tmux name is taken and its worktree is in use.
+  // Found by dogfooding — without this the job got as far as creating a worktree and then
+  // failed on a raw tmux "duplicate session" error, leaving the tree behind with nothing in it.
+  if (await tmuxSessionExists(name))
+    throw new JobError(`a session for ${job.feature ?? job.project} is already running (tmux ${name}); attach to it or let it finish`);
+
   const repoPath = findCheckout(REPO_ROOT, project.repoUrl);
   // The shared checkout is what a worktree is made FROM, never what a session runs IN.
   // See decisions/2026-10-24-the-runner-never-touches-my-checkout.md — there is deliberately
   // no fallback here: a job that cannot get a clean tree fails rather than borrowing one.
   const base = defaultBranch(repoPath);
   const cwd = ensureWorktree(repoPath, worktreeFor(job, WORKTREE_ROOT, base), base);
-  const name = sessionName(job);
 
   // Detached tmux, so a session that stops for a permission prompt is attachable rather than
   // stuck and invisible. Arguments are passed as an array; nothing goes through a shell.

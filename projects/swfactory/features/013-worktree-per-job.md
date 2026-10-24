@@ -59,24 +59,24 @@ on a feature continues where the first left off. A worktree whose branch has bee
 whose session has finished is removed, so the directory does not grow without bound.
 
 ## Acceptance criteria
-- [ ] A job never runs in the shared checkout; the runner only ever launches inside a worktree
+- [x] A job never runs in the shared checkout; the runner only ever launches inside a worktree
       under its own directory
-- [ ] Two jobs for different features run at the same time without either seeing the other's
+- [x] Two jobs for different features run at the same time without either seeing the other's
       changes, each on its own branch
-- [ ] A `build` job for feature NNN runs on `feature/<NNN>-<slug>`, whatever branch anything
+- [x] A `build` job for feature NNN runs on `feature/<NNN>-<slug>`, whatever branch anything
       else is on
-- [ ] Starting a job while I have uncommitted changes in my checkout neither sees nor disturbs
+- [x] Starting a job while I have uncommitted changes in my checkout neither sees nor disturbs
       them
-- [ ] A second job for the same feature reuses that feature's worktree rather than failing or
+- [x] A second job for the same feature reuses that feature's worktree rather than failing or
       creating a second one
-- [ ] A worktree that cannot be created — a branch already checked out elsewhere, a dirty tree,
+- [x] A worktree that cannot be created — a branch already checked out elsewhere, a dirty tree,
       a missing base branch — fails the job with that reason on the dashboard, and starts no
       session
-- [ ] Commits made in a worktree are visible in the main repo with no extra step
-- [ ] Finished worktrees are cleaned up, and cleanup never removes one with an unmerged branch
+- [x] Commits made in a worktree are visible in the main repo with no extra step
+- [x] Finished worktrees are cleaned up, and cleanup never removes one with an unmerged branch
       or a live session
-- [ ] The tmux session name still identifies the job, and attaching still works
-- [ ] `findCheckout` still resolves the repository by git remote; the worktree is created from
+- [x] The tmux session name still identifies the job, and attaching still works
+- [x] `findCheckout` still resolves the repository by git remote; the worktree is created from
       whatever it finds
 
 ## Out of scope
@@ -139,9 +139,9 @@ Tests use real git repositories in a temp directory, as `test/runner.test.ts` al
 - [x] `start` launches tmux in the worktree; the shared checkout is only ever the source
 - [x] Tests against real git repos: two features at once, reuse keeps uncommitted work, a
       branch checked out elsewhere fails the job
-- [ ] A worktree failure reaches the dashboard as a failed job with its reason, and no session
+- [x] A worktree failure reaches the dashboard as a failed job with its reason, and no session
 - [x] Cleanup in reconcile: remove only a merged, clean worktree git itself lists; never force
-- [ ] Dogfood: queue two jobs for different features at once and watch them not collide
+- [x] Dogfood: queue two jobs for different features at once and watch them not collide
 
 ## Open questions
 These are the calls I made. Each is a decision to overturn, not a question to answer.
@@ -177,3 +177,13 @@ These are the calls I made. Each is a decision to overturn, not a question to an
   Tests use real git repositories rather than mocks: worktree semantics are exactly what a mock
   would get wrong. 8 tasks.
 - 2026-10-24 Build started on `feature/013-worktree-per-job`.
+- 2026-10-24 Built and dogfooded. Two jobs for different features ran at the same time in
+  separate worktrees on separate branches, while this checkout stayed on `feature/013` and the
+  007 worktree could not see this spec. That is the thing that was impossible before.
+  The dogfood found a defect the plan missed: a job for a feature whose session is still alive
+  created its worktree and then failed on a raw tmux "duplicate session" error, leaving an empty
+  tree behind. The session name is now checked first, so the job fails with a sentence that says
+  what to do — attach to it or let it finish — and nothing is created.
+  Cleanup is guarded four ways and tested on each: it keeps a dirty tree, keeps an unmerged
+  branch, keeps the base tree, and refuses any path git does not itself list as a worktree. It
+  never passes `--force`. 120 tests, typecheck clean.
