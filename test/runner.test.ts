@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, pruneWorktree, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
-import type { Job, Session } from "../src/db.ts";
+import type { IdleSession, Job } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
 function job(over: Partial<Job> = {}): Job {
@@ -327,29 +327,27 @@ const idleProjects: Project[] = [
   { slug: "swfactory", name: "swfactory", status: "active", summary: null, repo: "github.com/jesper/swfactory", repoUrl: null, features: idleFeatures, file: "" },
 ];
 
-function session(over: Partial<Session> = {}): Session {
+const IDLE_NOW = new Date("2026-10-24T14:00:00.000Z");
+const IDLE_HOURS = 8;
+const hoursBefore = (h: number) => new Date(IDLE_NOW.getTime() - h * 3600_000).toISOString();
+
+function session(over: Partial<IdleSession> = {}): IdleSession {
   return {
     id: "s1",
     status: "your_turn",
-    status_since: "2026-10-23T22:21:00.000Z",
-    url: null,
+    status_since: hoursBefore(20),
     cwd: "/home/me/code/repos/swfactory",
     repo: "github.com/jesper/swfactory",
     branch: "feature/015-finished-sessions",
-    host: "box",
     feature_hint: null,
-    prompt: null,
-    message: null,
-    last_event: "Stop",
-    started_at: "2026-10-23T22:00:00.000Z",
-    updated_at: "2026-10-23T22:21:00.000Z",
-    dismissed: 0,
     ...over,
   };
 }
 
+const candidates = (ss: IdleSession[]) => idleCandidates(ss, idleProjects, IDLE_HOURS, IDLE_NOW);
+
 test("an idle your_turn session is a candidate, named the way the runner names its own", () => {
-  const out = idleCandidates([session()], idleProjects);
+  const out = candidates([session()]);
   assert.equal(out.length, 1);
   assert.equal(out[0].name, "factory-swfactory-015-finished-sessions");
 });
@@ -357,21 +355,43 @@ test("an idle your_turn session is a candidate, named the way the runner names i
 test("a needs_you session is never a candidate, however long it has waited", () => {
   // The endpoint filters these out too. This is the second lock on the same door: a
   // destructive act must not depend on one component's filter being right.
-  assert.deepEqual(idleCandidates([session({ status: "needs_you" })], idleProjects), []);
-  assert.deepEqual(idleCandidates([session({ status: "working" })], idleProjects), []);
-  assert.deepEqual(idleCandidates([session({ status: "ended" })], idleProjects), []);
+  assert.deepEqual(candidates([session({ status: "needs_you" })]), []);
+  assert.deepEqual(candidates([session({ status: "working" })]), []);
+  assert.deepEqual(candidates([session({ status: "ended" })]), []);
+});
+
+test("the age is re-checked here, not taken from the dashboard", () => {
+  // Round 1: the cheap guard was doubled and the load-bearing one was taken on faith. A
+  // compromised or simply buggy dashboard returning a session that stopped one second ago
+  // would have had the runner kill every live factory session on the next tick.
+  assert.deepEqual(candidates([session({ status_since: hoursBefore(1) })]), []);
+  assert.deepEqual(candidates([session({ status_since: hoursBefore(7.9) })]), []);
+  assert.equal(candidates([session({ status_since: hoursBefore(8.1) })]).length, 1);
+  // Garbage and futures are not evidence of idleness.
+  assert.deepEqual(candidates([session({ status_since: "not a date" })]), []);
+  assert.deepEqual(candidates([session({ status_since: hoursBefore(-5) })]), []);
 });
 
 test("a session the runner could not have named is left alone", () => {
   // No project: nothing ties it to this factory at all.
-  assert.deepEqual(idleCandidates([session({ repo: null, cwd: "/tmp/elsewhere" })], idleProjects), []);
+  assert.deepEqual(candidates([session({ repo: null, cwd: "/tmp/elsewhere" })]), []);
   // A project but no feature — a session started by hand in the repo, as happened for real.
   // There is no tmux name to act on, and guessing one risks killing something else.
-  assert.deepEqual(idleCandidates([session({ branch: "main" })], idleProjects), []);
+  assert.deepEqual(candidates([session({ branch: "main" })]), []);
+});
+
+test("a name another live session is using is never a target", () => {
+  // The round 1 defect, in its cheapest form: a stale row and a fresh session on the same
+  // feature. The stale row names the tmux session the fresh one is sitting in.
+  const stale = session({ id: "stale", status_since: hoursBefore(20) });
+  const fresh = session({ id: "fresh", status: "working", status_since: hoursBefore(0.01) });
+  assert.deepEqual(candidates([stale, fresh]), [], "the stale row must not name the live session");
+  // Alone, the stale row is still a candidate — it is the live owner that protects the name.
+  assert.equal(candidates([stale]).length, 1);
 });
 
 test("a done feature's session is still a candidate — done is what makes it endable", () => {
   // The 006 session alive since the previous evening is exactly the case this exists for.
-  const out = idleCandidates([session({ branch: "feature/006-ntfy" })], idleProjects);
+  const out = candidates([session({ branch: "feature/006-ntfy" })]);
   assert.equal(out[0]?.name, "factory-swfactory-006-ntfy");
 });

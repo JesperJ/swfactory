@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: building
+status: reviewing
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -45,7 +45,7 @@ built for acting.
 - [x] A session whose feature is `done` never appears in Next, in either sort order
 - [x] That session is still visible in Inbox and in Sessions
 - [x] A `your_turn` session older than 2 hours does not appear in Next
-- [ ] A `needs_you` session never ages out of Next, however long it has waited
+- [x] A `needs_you` session never ages out of Next, however long it has waited
       — this criterion was wrong when written *and* ticked when false. There was no existing
       48-hour window for `needs_you`; the window applied to `your_turn` only. The diff added
       a cutoff that did not exist, and the tick claimed the opposite. Rewritten to what was
@@ -137,15 +137,15 @@ The guards are the part worth testing hardest: never a `needs_you` session, neve
 one, and never silently.
 
 ## Tasks (round 1 rework)
-- [ ] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
+- [x] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
       than the row's `status_since`, and skip a name another live row claims with a status
       other than `your_turn`
-- [ ] Re-check the age threshold in `idleCandidates` instead of trusting the dashboard's filter
-- [ ] `idleSessions` filters `dismissed = 0`, so Dismiss actually revokes the kill order
-- [ ] Remove the `needs_you` cutoff from `rankNext`; fix the comment and the test that each
+- [x] Re-check the age threshold in `idleCandidates` instead of trusting the dashboard's filter
+- [x] `idleSessions` filters `dismissed = 0`, so Dismiss actually revokes the kill order
+- [x] Remove the `needs_you` cutoff from `rankNext`; fix the comment and the test that each
       assert something different from the code
-- [ ] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxAttached`
-- [ ] Clamp `hours` to a sane floor and drop the duplicated `8` in `src/server.ts`
+- [x] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxAttached`
+- [x] Clamp `hours` to a sane floor and drop the duplicated `8` in `src/server.ts`
 
 ## Tasks
 - [x] `rankNext`: a `done` feature's sessions do not rank, with a test
@@ -216,3 +216,17 @@ one, and never silently.
   Everything on the Next side was verified working by three reviewers at 390px and 1366px, light
   and dark, both sort orders. What has to change is the part that ends processes on the host —
   which this spec called "the guards worth testing hardest" and then left untested.
+- 2026-10-24 Rework built. The destructive path is now identity-based, not name-based.
+  `idleCandidates` gained the two guards that carry weight: it re-checks the age itself rather
+  than trusting the dashboard's filter, and it skips a tmux name another live row claims for
+  something that is not idle. `endIdleSessions` then refuses a tmux session created *after* the
+  row went idle — such a session cannot be the thing that went idle, it is a different session
+  wearing the same name. `tmuxSessionExists` and `tmuxAttached` collapsed into one
+  `tmuxSession` call, closing the attach race between three separate invocations.
+  `idleSessions` filters `dismissed = 0`, so Dismiss revokes the kill order, and returns only
+  the seven columns the runner needs instead of `SELECT *` with the user's prompt in it.
+  `hours` is clamped to a floor rather than merely validated.
+  The `needs_you` cutoff is gone. Blocked is blocked; the test now asserts that at 40h, 60h and
+  two weeks, which is the weekend case that made it blocking.
+  144 tests. Verified against real tmux: a 20h-old row and a tmux session of that name created
+  seconds earlier — the exact round 1 defect — is refused, with the reason logged.

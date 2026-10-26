@@ -28,6 +28,9 @@ export interface Session {
   dismissed: number;
 }
 
+// What the runner is told about an idle session: enough to identify it, and nothing else.
+export type IdleSession = Pick<Session, "id" | "status" | "status_since" | "repo" | "cwd" | "branch" | "feature_hint">;
+
 export interface SessionUpdate {
   id: string;
   event: string;
@@ -170,11 +173,23 @@ export class Store {
   // Sessions that finished and have sat untouched past `hours` — candidates for being ended.
   // `needs_you` is deliberately excluded however long it has waited: it is blocked on a person,
   // which is the entire reason sessions run in tmux rather than headless.
-  idleSessions(hours: number, now = new Date()): Session[] {
+  // Candidates for the runner to end. `dismissed = 0` is not tidiness: round 1 found that a
+  // dismissed row stayed a kill candidate forever, so the Dismiss button on a stale row — the
+  // obvious remedy, and the one this feature added — did nothing about that row's standing
+  // authority to destroy a tmux session every ten seconds. Dismissing now revokes it.
+  //
+  // Only the columns the runner needs. The row carries the user's prompt and Claude's last
+  // message; a destructive-path endpoint has no business shipping either.
+  idleSessions(hours: number, now = new Date()): IdleSession[] {
     const before = new Date(now.getTime() - hours * 3600_000).toISOString();
     return this.db
-      .prepare("SELECT * FROM sessions WHERE status = 'your_turn' AND COALESCE(status_since, updated_at) <= ? ORDER BY updated_at")
-      .all(before) as unknown as Session[];
+      .prepare(
+        `SELECT id, status, COALESCE(status_since, updated_at) AS status_since, repo, cwd, branch, feature_hint
+           FROM sessions
+          WHERE status = 'your_turn' AND dismissed = 0 AND COALESCE(status_since, updated_at) <= ?
+          ORDER BY updated_at`,
+      )
+      .all(before) as unknown as IdleSession[];
   }
 
   // Everything not dismissed, plus anything touched in the last `days`.
