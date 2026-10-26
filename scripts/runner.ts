@@ -155,18 +155,50 @@ export function ensureWorktree(repoPath: string, plan: WorktreePlan, base: strin
 // outside the repository. It never passes --force: an interrupted build's unsaved work is worth
 // more than a tidy cache, so a dirty tree is kept and simply tried again next time.
 // How long a worktree is left alone regardless of how its branch looks. Covers the case the
-// tip check cannot: an empty branch whose base moves on underneath it, which then reads as
-// merged while still being brand new. It also matches the situation the bug came from — someone
-// just made that directory and is about to type in it.
-const WORKTREE_GRACE_MINUTES = Number(process.env.FACTORY_WORKTREE_GRACE_MINUTES ?? 30);
+// reflog check cannot: an empty branch whose reflog has expired, which then reads as merged
+// while still being brand new. It also matches the situation the bug came from — someone just
+// made that directory and is about to type in it.
+const WORKTREE_GRACE_DEFAULT_MINUTES = 30;
 
-// Minutes since the directory last changed. The plan said birth time falling back to mtime;
-// building it showed that was both untestable and pointless. `utimes` cannot move a birth time,
-// so the guard could never be exercised without waiting out the real clock — and a tree created
-// a minute ago always has a fresh mtime anyway, so mtime alone already answers "was this made
-// just now". What it answers better is the question actually being asked: when did anything last
-// happen here. A tree created months ago but written to a minute ago should be kept, and mtime
-// says so while a birth time does not.
+// `Number("")` is 0 and `Number("30m")` is NaN, and `age < NaN` is false — so the plain
+// `Number(process.env...)` this started as meant that a blank `Environment=` line in the unit
+// file, or minutes written the way every other tool spells a duration, switched the grace guard
+// off in complete silence. That is one typo away from the bug this feature exists to fix, on the
+// only code in the factory that deletes a directory outside the repository, so it is worth the
+// eight lines: anything that is not a positive, finite number of minutes is refused out loud and
+// the default stands. `warn` is a parameter so the tests can read the complaint instead of
+// printing it.
+export function graceMinutes(
+  raw: string | undefined,
+  warn: (message: string) => void = console.error,
+): number {
+  if (raw === undefined) return WORKTREE_GRACE_DEFAULT_MINUTES;
+  const minutes = Number(raw);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    warn(
+      `[runner] ignoring FACTORY_WORKTREE_GRACE_MINUTES=${JSON.stringify(raw)}: ` +
+        `not a positive number of minutes, keeping ${WORKTREE_GRACE_DEFAULT_MINUTES}`,
+    );
+    return WORKTREE_GRACE_DEFAULT_MINUTES;
+  }
+  return minutes;
+}
+
+const WORKTREE_GRACE_MINUTES = graceMinutes(process.env.FACTORY_WORKTREE_GRACE_MINUTES);
+
+// Minutes since a top-level entry of the worktree directory last changed — which for a tree
+// nobody has touched is the same as minutes since it was made.
+//
+// Be precise about what this knows, because the first version of this comment was not and all
+// three reviewers caught it. A directory's mtime moves when an entry is created, removed or
+// renamed *in that directory*; it does not move when a file inside it, or anywhere below it, is
+// edited. So this is a creation grace, not a last-used grace: a tree somebody has been working
+// in for three hours reads as three hours old. That is enough for what the guard is for — the
+// tree somebody just made by hand and is about to type in — and the dirty check above covers
+// the tree being worked in, since work in progress is uncommitted by definition.
+//
+// mtime rather than the planned birth time because `utimes` cannot move a birth time, so the
+// guard could not be exercised without waiting out the real clock.
 export function worktreeAge(dir: string, now = new Date()): number {
   try {
     return (now.getTime() - statSync(dir).mtimeMs) / 60_000;
@@ -185,10 +217,15 @@ export function worktreeAge(dir: string, now = new Date()): number {
 //
 // The reflog answers the real question. A branch created and never written to has one entry,
 // "branch: Created from <base>"; a branch that was worked on has commit entries above it.
+//
+// The ref is spelled in full on purpose. A bare name goes through git's disambiguation order,
+// where `refs/<name>` beats `refs/heads/<name>` — so a branch called `stash` would be asked
+// about the *stash* reflog, whose entries never look like "branch: Created from", and an
+// untouched branch would be reported as worked on.
 export function branchHasOwnCommits(repoPath: string, branch: string): boolean {
   let log: string;
   try {
-    log = git(repoPath, ["reflog", "show", branch, "--format=%gs"]);
+    log = git(repoPath, ["reflog", "show", `refs/heads/${branch}`, "--format=%gs"]);
   } catch {
     return true; // no reflog to read: fall through to the merge check rather than keep forever
   }

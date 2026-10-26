@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
+import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, graceMinutes, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
 import type { IdleSession, Job } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -504,11 +504,77 @@ test("a fast-forward merge still leaves a collectable tree", () => {
   assert.equal(pruneWorktree(repo, wt), "removed");
 });
 
-test("worktree age is measured from the last time anything happened there", () => {
+test("a grace period that is not a positive number of minutes is refused, loudly", () => {
+  // The values worth testing are the ones a person actually types into a unit file. `""` is a
+  // blank `Environment=FACTORY_WORKTREE_GRACE_MINUTES=` line and `"30m"` is the duration
+  // spelled the way most tools spell it; both used to parse into something `age < x` is never
+  // true for, which removed the guard without saying a word.
+  const said: string[] = [];
+  const warn = (m: string) => said.push(m);
+
+  assert.equal(graceMinutes(undefined, warn), 30, "unset means the default");
+  assert.equal(graceMinutes("45", warn), 45, "a plain number is honoured");
+  assert.equal(graceMinutes("0.5", warn), 0.5, "and so is a fraction of a minute");
+  assert.deepEqual(said, [], "nothing valid is complained about");
+
+  for (const bad of ["", "30m", "half an hour", "0", "-1", "NaN", "Infinity"]) {
+    assert.equal(graceMinutes(bad, warn), 30, `${JSON.stringify(bad)} falls back to the default`);
+  }
+  assert.equal(said.length, 7, "each rejected value is reported once");
+  assert.match(said[1], /FACTORY_WORKTREE_GRACE_MINUTES="30m"/, "and names the value it refused");
+  assert.match(said[1], /keeping 30/, "and what it is using instead");
+});
+
+test("the reflog is read from refs/heads, so a branch named after a ref is not confused", () => {
+  // `stash` is the realistic collision: git resolves a bare name through refs/<name> before
+  // refs/heads/<name>, so asking about a branch called "stash" in a repo that has a stash reads
+  // the stash's reflog, which never says "branch: Created from" — and an untouched branch is
+  // then reported as having commits and handed back to the check that cannot tell.
+  const repo = mkdtempSync(join(tmpdir(), "factory-refname-"));
+  const g = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@example.com");
+  g("config", "user.name", "T");
+  writeFileSync(join(repo, "a.txt"), "one\n");
+  g("add", "a.txt");
+  g("commit", "-qm", "first");
+  writeFileSync(join(repo, "a.txt"), "two\n");
+  g("stash", "push", "-q", "-m", "wip");
+  g("branch", "stash");
+
+  assert.equal(
+    branchHasOwnCommits(repo, "stash"),
+    false,
+    "the branch has no commits of its own, whatever the stash reflog says",
+  );
+});
+
+test("worktree age is measured from the directory's own mtime, not from work inside it", () => {
   const dir = mkdtempSync(join(tmpdir(), "factory-age-"));
+  // Laid out before backdating, because *adding* a top-level entry does move the directory's
+  // mtime — it is editing what is already there that does not.
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "a.txt"), "one\n");
+  writeFileSync(join(dir, "top.txt"), "one\n");
+
   assert.ok(worktreeAge(dir) < 1, "a directory just made is new");
   backdate(dir, 90);
   assert.ok(Math.abs(worktreeAge(dir) - 90) < 1, "and an hour and a half old after backdating");
+
+  // Pinning the limit the comment now admits to: working in the tree does not make it young
+  // again, so this is a creation grace rather than a last-used one. If either of these ever
+  // starts failing, the guard has become stronger than it claims and the comment must say so.
+  writeFileSync(join(dir, "src", "a.txt"), "edited\n");
+  assert.ok(
+    Math.abs(worktreeAge(dir) - 90) < 1,
+    "a file edited in a subdirectory leaves the tree's age alone",
+  );
+  writeFileSync(join(dir, "top.txt"), "edited\n");
+  assert.ok(
+    Math.abs(worktreeAge(dir) - 90) < 1,
+    "and so does rewriting a file that was already at the top level",
+  );
+
   // A path that is not there cannot be judged old, so it is treated as new and left alone.
   assert.equal(worktreeAge(join(dir, "nope")), 0);
 });
