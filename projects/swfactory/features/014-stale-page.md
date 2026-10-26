@@ -1,6 +1,6 @@
 ---
 title: Tell the page when it is out of date
-status: reviewing
+status: done
 priority: P1
 summary: The dashboard notices its own assets changed and reloads, instead of rendering fresh data with old code.
 ---
@@ -49,7 +49,7 @@ meaning "always ask, but a 304 is fine".
       rather than by the absence of a complaint
 - [x] `app.js` and `styles.css` are served with `ETag` and `Cache-Control: no-cache`
 - [x] With the dashboard unreachable, the page does not reload-loop; it waits and recovers
-- [ ] Verified for real on a phone as well as a desktop — desktop proven, phone not yet
+- [x] Verified for real on a phone as well as a desktop
 
 ## Out of scope
 - Hot-reloading without a page refresh. A full reload is correct for a page that holds no state
@@ -131,3 +131,17 @@ the id has differed on two consecutive reads.
   Both the UX reviewer and I tested at 390px in emulated mobile Chromium, which cannot show
   iOS Safari tearing down SSE on backgrounding or a PWA resume — which is how this dashboard is
   actually used. That is the gap, and it is yours to close in about thirty seconds.
+- 2026-10-26 **Done.** The last criterion was closed by the only instrument that counted: a
+  real handset. A deliberately visible marker was deployed to the live container while the
+  dashboard was open on the phone, and the page reloaded itself onto the new code — confirmed by
+  the user, not by an emulator and not by the absence of a complaint. The marker was uncommitted
+  and is reverted; the build id returned to `6b024149`, byte-for-byte the value it had before,
+  which also demonstrates the hash is content-derived and stable rather than merely changing.
+  Passed against `reviews/014-round-1.md`: no blocking findings from any of the three reviewers,
+  every acceptance criterion now met, and seven of the seventeen minors fixed in PRs #14 and the
+  round 1 follow-up. The ones left are recorded in the round file rather than lost — chiefly the
+  unserialised reload path on a cold navigation, and the fact that every asset still shares one
+  etag, which errs in the safe direction.
+  The feature it was written for is intact: a screenshot of this dashboard is now trustworthy
+  within about a minute of a deploy, which is the trust every other feature gets debugged
+  against.
