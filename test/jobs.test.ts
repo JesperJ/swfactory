@@ -194,3 +194,73 @@ test("a blocked session is never aged out of what the dashboard serves", () => {
   st.dismiss("blocked-60d");
   assert.deepEqual(st.list().map((s) => s.id), ["blocked-20d"]);
 });
+
+// --- retargeting a row costs the clock -------------------------------------------------------
+//
+// The finding three review rounds kept arriving at. A session row decides which tmux session the
+// runner will end, and `branch`, `cwd`, `repo` and `feature_hint` all arrive in the request body.
+// Rewriting them under an unchanged status used to keep the old `status_since`, so a row could
+// acquire a new target with its eight hours already served and a kill cost nothing to redirect.
+
+test("rewriting what a row points at restarts the clock that makes it endable", () => {
+  const st = new Store(":memory:");
+  const longAgo = new Date(Date.now() - 20 * 3600_000).toISOString();
+  const now = new Date();
+
+  // A finished session of the attacker's own, idle long past the threshold.
+  st.upsert({ id: "mine", event: "Stop", status: "your_turn", branch: "main", cwd: "/tmp/mine", repo: "github.com/me/mine" }, longAgo);
+  assert.deepEqual(st.idleSessions(8, now).map((s) => s.id), ["mine"], "it is endable, as it should be");
+
+  // The attack: one Stop that rewrites the target, status unchanged so no notification fires.
+  const { statusChanged } = st.upsert({
+    id: "mine",
+    event: "Stop",
+    status: "your_turn",
+    branch: "feature/006-push-notifications",
+    cwd: "/home/jesper/code/repos/swfactory",
+  });
+  assert.equal(statusChanged, false, "the status really did not change — that is the point");
+  assert.deepEqual(st.idleSessions(8, now), [], "but the row is no longer endable: the clock restarted");
+
+  const row = st.get("mine")!;
+  assert.equal(row.branch, "feature/006-push-notifications", "the retarget still applies");
+  assert.ok(row.status_since > longAgo, "and it costs the full window to use");
+});
+
+test("each of the four targeting fields restarts the clock on its own", () => {
+  const longAgo = new Date(Date.now() - 20 * 3600_000).toISOString();
+  const now = new Date();
+  const base = { event: "Stop", status: "your_turn" as const, branch: "main", cwd: "/tmp/a", repo: "github.com/me/a", featureHint: null };
+  for (const [field, value] of [["branch", "feature/006-x"], ["cwd", "/tmp/b"], ["repo", "github.com/me/b"], ["featureHint", "006"]] as const) {
+    const st = new Store(":memory:");
+    st.upsert({ id: "s", ...base }, longAgo);
+    assert.equal(st.idleSessions(8, now).length, 1, `${field}: endable before`);
+    st.upsert({ id: "s", ...base, [field]: value });
+    assert.deepEqual(st.idleSessions(8, now), [], `${field} was rewritten, so the clock restarts`);
+  }
+});
+
+test("an ordinary repeated report does not restart the clock", () => {
+  // The clock must only move for a real change. Claude Code repeats idle notifications, and a
+  // session that keeps saying the same thing has to stay endable or the feature does nothing.
+  const st = new Store(":memory:");
+  const longAgo = new Date(Date.now() - 20 * 3600_000).toISOString();
+  const now = new Date();
+  const same = { id: "s", event: "Stop", status: "your_turn" as const, branch: "feature/001-a", cwd: "/tmp/wt", repo: "github.com/me/a" };
+  st.upsert(same, longAgo);
+  st.upsert(same);
+  st.upsert({ ...same, event: "Notification" }); // a different event, the same facts
+  assert.deepEqual(st.idleSessions(8, now).map((s) => s.id), ["s"], "nothing changed, so it is still endable");
+  assert.equal(st.get("s")!.status_since, longAgo, "and the clock never moved");
+});
+
+test("a retarget does not revive a dismissed row", () => {
+  // Round 2 closed the un-dismiss bypass by making a revival cost a real status change. A field
+  // rewrite must not hand it back.
+  const st = new Store(":memory:");
+  st.upsert({ id: "s", event: "Stop", status: "your_turn", branch: "main" }, new Date(Date.now() - 20 * 3600_000).toISOString());
+  st.dismiss("s");
+  st.upsert({ id: "s", event: "Stop", status: "your_turn", branch: "feature/006-x", cwd: "/x" });
+  assert.equal(st.get("s")!.dismissed, 1, "still dismissed");
+  assert.deepEqual(st.idleSessions(8), [], "and still not a kill candidate");
+});

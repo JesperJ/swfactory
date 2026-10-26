@@ -11,7 +11,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { promisify } from "node:util";
 import { loadProjects, normalizeRepo, type Project } from "../src/specs.ts";
 import { JOB_COMMANDS, type IdleSession, type Job, type Session } from "../src/db.ts";
@@ -409,8 +409,14 @@ export function idleCandidates(
   // never fire: `idleSessions` returns only `your_turn` rows and the set was built by skipping
   // `your_turn` rows, so it was empty on every tick. The test that covered it handed in a
   // `working` row by hand — input the endpoint cannot produce — so it passed while proving
-  // nothing, and the task describing it was ticked. The case it was meant to catch is covered
-  // properly now, by matching where the session actually lives (see `endIdleSessions`).
+  // nothing, and the task describing it was ticked.
+  //
+  // Round 3 correction: removing it was right, and the claim made for the removal was wrong.
+  // The path bind does **not** cover the case it was reaching for — two claude sessions started
+  // in one tmux session report the same directory, so comparing directories cannot tell them
+  // apart. That gap is as old as the feature and is still open: a second session opened in a
+  // finished session's tmux window can be killed along with it. It needs an identity the runner
+  // wrote itself, which is a separate piece of work.
   for (const s of sessions) {
     if (s.status !== "your_turn") continue;
     const since = new Date(s.status_since ?? "").getTime();
@@ -463,10 +469,12 @@ async function endIdleSessions(): Promise<void> {
       logSkip(name, `${name} (session ${session.id}) idle since ${session.status_since} but attached — leaving it alone`);
       continue;
     }
-    // The identity check, and the reason this is not a name lookup. Round 2: comparing only
-    // creation time was one-directional — it refused sessions newer than the row and let every
-    // older one through, which is the class this feature targets. The row says where it was
-    // running; a tmux session somewhere else is a different session wearing the same name.
+    // Where the row says it was running. Round 2 added this as "an identity the reporter does
+    // not control"; round 3 established that it is nothing of the kind — `cwd` arrives in the
+    // same POST as `branch`, from `payload.cwd`, with no validation. It stops a session that
+    // is genuinely somewhere else, which is worth having, and it stops no attacker on its own.
+    // What makes a redirected kill expensive is that retargeting now restarts the idle clock in
+    // `Store.upsert`, so a rewritten row has to wait out the whole window again.
     if (!samePath(info.path, session.cwd)) {
       logSkip(
         name,
@@ -497,13 +505,20 @@ async function endIdleSessions(): Promise<void> {
   }
 }
 
-// Two paths are the same session's home if they resolve to the same place. Compared with
-// `resolve` rather than as strings so a trailing slash or a `.` segment is not treated as a
-// different directory; symlinks are deliberately not followed, because the check must not
-// depend on a filesystem the reporter could arrange.
+// Two paths are the same session's home if they name the same place. `normalize`, not
+// `resolve`: round 3 measured `samePath("/home/jesper/code/repos/swfactory", ".")` returning
+// true, because `resolve` completes a relative path against the *runner's* working directory —
+// so a reporter could match the shared checkout by sending `cwd: "."`, without knowing any path
+// at all. That is arithmetic, not identity.
+//
+// Both sides must be absolute. Symlinks are deliberately not followed, because the comparison
+// must not depend on a filesystem the reporter could arrange.
 export function samePath(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
-  return resolve(a) === resolve(b);
+  if (!isAbsolute(a) || !isAbsolute(b)) return false;
+  // Trailing slashes and `.`/`..` segments are spelling, not a different directory.
+  const tidy = (p: string) => normalize(p).replace(/\/+$/, "");
+  return tidy(a) === tidy(b);
 }
 
 export interface TmuxSession {

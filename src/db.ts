@@ -136,16 +136,42 @@ export class Store {
     // status rather than reporting anything new, so they must not revive a dismissed session
     // or reset the clock that ages it out of the inbox. Only a real change does that.
     const changed = !existing || existing.status !== status;
+
+    const cwd = pick(u.cwd, existing?.cwd);
+    const repo = pick(u.repo, existing?.repo);
+    const branch = pick(u.branch, existing?.branch);
+    const featureHint = pick(u.featureHint, existing?.feature_hint);
+
+    // `status_since` is the clock a session is judged idle by, and the runner ends a session
+    // that has been idle long enough. Rounds 1 to 3 of 015 all turned on the same hole: these
+    // four fields decide *which* tmux session a row points at, they arrive in the request body,
+    // and rewriting them under an unchanged status kept the old clock — so a row could acquire
+    // a new target with its 8 hours already served, and the kill cost nothing to redirect.
+    //
+    // Retargeting is therefore treated as what it is: a change of what this row is about. The
+    // clock restarts, and a redirected kill has to wait out the full window again.
+    //
+    // Deliberately not folded into `changed`, which means "the status changed" and is relied on
+    // for two other things: whether to notify, and whether to revive a dismissed row. A
+    // retarget must do neither — reviving a dismissed row on a field change would hand back the
+    // bypass that round 2 closed.
+    const retargeted =
+      !!existing &&
+      (existing.cwd !== cwd ||
+        existing.repo !== repo ||
+        existing.branch !== branch ||
+        existing.feature_hint !== featureHint);
+
     const row = {
       id: u.id,
       status,
-      status_since: changed ? now : existing.status_since,
+      status_since: changed || retargeted ? now : existing.status_since,
       url: pick(u.url, existing?.url),
-      cwd: pick(u.cwd, existing?.cwd),
-      repo: pick(u.repo, existing?.repo),
-      branch: pick(u.branch, existing?.branch),
+      cwd,
+      repo,
+      branch,
       host: pick(u.host, existing?.host),
-      feature_hint: pick(u.featureHint, existing?.feature_hint),
+      feature_hint: featureHint,
       prompt: pick(u.prompt, existing?.prompt),
       message: u.prompt ? null : pick(u.message, existing?.message),
       last_event: u.event,

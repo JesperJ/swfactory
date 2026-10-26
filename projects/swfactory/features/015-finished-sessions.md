@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: building
+status: reviewing
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -132,12 +132,12 @@ The guards are the part worth testing hardest: never a `needs_you` session, neve
 one, and never silently.
 
 ## Tasks (round 2 rework)
-- [ ] Make a retarget cost the clock: `upsert` moves `status_since` when `branch`, `cwd` or
+- [x] Make a retarget cost the clock: `upsert` moves `status_since` when `branch`, `cwd` or
       `repo` change, not only when the status does
-- [ ] `samePath` compares identities, not arithmetic: a relative path is never a match
-- [ ] Correct the two false claims in comments and spec — the path bind does not cover the
+- [x] `samePath` compares identities, not arithmetic: a relative path is never a match
+- [x] Correct the two false claims in comments and spec — the path bind does not cover the
       `busy` case, and `cwd` is not an identity the reporter does not control
-- [ ] A test for the retarget itself: the attack sequence, asserted to cost the full window
+- [x] A test for the retarget itself: the attack sequence, asserted to cost the full window
 - [ ] (deferred, own spec) Bind the kill to an identity the reporter does not control
       — the bind that shipped is to `cwd`, which arrives in the **same POST** as `branch`, from
       `payload.cwd` with no validation. It refuses an attacker who rewrites one field and
@@ -344,3 +344,22 @@ one, and never silently.
   The one-liner touches `upsert`, which has been correct throughout and whose rule — "a real
   change resets the clock" — already exists and is already tested. It extends an existing rule
   rather than adding a new mechanism to the part of the system with the worst track record.
+- 2026-10-26 Built. `upsert` restarts `status_since` when `branch`, `cwd`, `repo` or
+  `feature_hint` change, not only when the status does — those four decide which tmux session a
+  row points at, and all four arrive in the request body. Retargeting is now treated as what it
+  is: a change of what the row is about, so the clock restarts and a redirected kill waits out
+  the whole window again.
+  Deliberately kept separate from `statusChanged`, which means "the status changed" and is
+  relied on for notifying and for reviving a dismissed row. A retarget must do neither —
+  reviving a dismissed row on a field change would hand back the bypass round 2 closed, and
+  there is a test asserting it does not.
+  `samePath` now compares identities rather than doing arithmetic: both sides must be absolute,
+  so `cwd: "."` no longer resolves against the runner's own working directory and matches the
+  shared checkout.
+  Two false claims corrected where they were written, not only in this log: the path bind does
+  not cover the `busy` case (two claude sessions in one tmux session report the same directory,
+  so that gap is still open and now says so), and `cwd` is not an identity the reporter does not
+  control.
+  Round 3's attack re-run against the new code: the retarget still applies and buys nothing —
+  no kill target before or after, and `status_since` moves. The relative-path trick returns
+  false. 159 tests, typecheck clean.
