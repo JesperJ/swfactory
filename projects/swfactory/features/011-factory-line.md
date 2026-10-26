@@ -1,6 +1,6 @@
 ---
 title: The factory line
-status: reviewing
+status: done
 priority: P1
 summary: One /factory command, a review stage before done, and an approver that absorbs the decisions that don't need me.
 ---
@@ -78,8 +78,9 @@ not to remove the last decision. Merging stays mine, with the findings already a
 - [x] Rework is capped at two rounds, then escalates
 - [x] An escalation reaches me as one specific question, never as a list of findings
 - [x] Nothing merges to main automatically
-- [ ] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
-      blocked-but-planned — and applies only what I accept
+- [x] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
+      blocked-but-planned — and applies only what I accept. Implemented in `factory.md`’s
+      `## status` section; closed on decision rather than on use — see the 2026-10-26 Log entry.
 
 ## Out of scope
 - Starting sessions from the dashboard. That is 005; this is what runs once one is started.
@@ -242,3 +243,19 @@ the thing that actually drifted.
   criterion, `/factory status` proposing a stale-spec diff, has never been run once: no
   `factory: status` commit exists anywhere. That one closes by use, not by code, so a rework
   round could only re-read the same prompt text.
+- 2026-10-26 Escalation answered: spin it out. Passed on round 2 (`reviews/011-round-2.md`),
+  with the two things it could not close handed to where they belong rather than held open here.
+  UX's blocking finding — a feature sitting on an unanswered escalation renders in Next
+  identically to one never reviewed, and its "Review it" button queues three reviewer agents on
+  unchanged code — is now `017-escalation-question`, together with UX's minor about `CLAUDE.md`'s
+  command table omitting that escalating leaves the status at `reviewing`. It is a real defect
+  and a small one, but it is about how a feature's state is represented, not about whether the
+  line runs.
+  The last criterion, `/factory status` proposing a stale-spec diff, is ticked on this decision
+  and not on verification, which is worth saying plainly: the prompt implements it, no
+  `factory: status` commit exists anywhere, and the first real run is what will tell us whether
+  it works. Holding a feature that has been merged and in daily use for three days open on one
+  unexercised prompt path is bookkeeping, not a gate. If that first run misbehaves it is a new
+  feature, not a reopening of this one.
+  Ten criteria met on evidence, two of them closed this round by 015's rework → rework →
+  escalate. Code 0 blocking, security 0 blocking across the round.
