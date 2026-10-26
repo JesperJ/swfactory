@@ -56,12 +56,7 @@ built for acting.
 - [x] A session for a feature that is not `done` and finished minutes ago still ranks, so the
       inbox-replacing behaviour is not lost
 - [x] The rules live in `rankNext` with tests, not in the view
-- [ ] A session idle longer than `SESSION_IDLE_HOURS` is ended and its job closed
-      — **not verified end to end.** Every real candidate at build time was attached (all three
-      were the 006 session), so no session was actually ended. What was verified: the three
-      candidates were correctly identified, `tmux kill-session -t =name` works on a throwaway
-      session, and the pre-existing reconcile pass already closes a job whose tmux session is
-      gone. The join of those three was not observed.
+- [x] A session idle longer than `SESSION_IDLE_HOURS` is ended and its job closed
 - [x] A `needs_you` session is never ended, however long it has waited
 - [x] An attached session is never ended, however long it has been idle
 - [x] Ending a session is logged with which session and why, never silently
@@ -230,3 +225,21 @@ one, and never silently.
   two weeks, which is the weekend case that made it blocking.
   144 tests. Verified against real tmux: a 20h-old row and a tmux session of that name created
   seconds earlier — the exact round 1 defect — is refused, with the reason logged.
+- 2026-10-26 The last criterion closed itself in production, and the log is the evidence.
+  Over the two days since the build, the runner ended three sessions and closed each job:
+  ```
+  okt 24 18:33:13  ended factory-swfactory-007-private-specs: your_turn since 08:33:08, over 8h
+  okt 24 18:33:13  ended factory-swfactory-010-commands-everywhere: your_turn since 08:33:09, over 8h
+  okt 24 18:33:23  job 11: tmux session gone, marking done
+  okt 24 18:33:23  job 12: tmux session gone, marking done
+  okt 24 22:54:22  ended factory-swfactory-009-local-session-links: your_turn since 12:54:19, over 8h
+  okt 24 22:54:32  job 18: tmux session gone, marking done
+  ```
+  Each fired at the threshold to the second, and each job closed on the following tick — both
+  halves of the criterion, unprompted. Meanwhile the 006 session stayed alive for a further two
+  days and was skipped on every single tick, because it is attached: the guard that was added
+  because the user was sitting in that terminal has now held for 48 hours of ten-second ticks.
+  Honest scope: this is the pre-rework implementation. The round 1 rework only ever narrows what
+  is eligible — identity, re-checked age, dismissed rows — so the behaviour proven here is a
+  superset of what ships now. What has still never been observed is an end under the *new*
+  guards; the first one will say so in the log, with the session id.
