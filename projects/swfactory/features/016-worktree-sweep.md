@@ -1,6 +1,6 @@
 ---
 title: The sweep stops eating worktrees that were never used
-status: building
+status: reviewing
 priority: P1
 summary: A worktree created by hand is deleted within seconds, because an empty branch and a merged branch look identical to the sweep.
 ---
@@ -115,15 +115,15 @@ that vanishes. Recorded rather than guarded.
 - [x] `pruneWorktree` keeps a tree younger than the grace period, with a test that backdates
 - [x] A test proving a genuinely merged feature branch is still collected, so 013 survives
 - [x] Verified for real: make a worktree by hand with the runner running and watch it live
-- [ ] Round 1 blocking: validate `FACTORY_WORKTREE_GRACE_MINUTES` — reject a non-finite or
+- [x] Round 1 blocking: validate `FACTORY_WORKTREE_GRACE_MINUTES` — reject a non-finite or
       non-positive value, fall back to 30, and say so on stderr. `""` parses to `0` and `"30m"`
       to `NaN`, and `age < NaN` is `false`, so a one-token typo in the unit file silently
       deletes the grace guard entirely. Test the rejected values.
-- [ ] Round 1, same five lines, taken now rather than in another round: pass
+- [x] Round 1, same five lines, taken now rather than in another round: pass
       `refs/heads/${branch}` to `git reflog show`, not the bare name — a bare name resolves
       `refs/<name>` ahead of `refs/heads/<name>`, so a branch named `stash` reads the stash
       reflog instead and the guard reports commits a branch does not have.
-- [ ] Round 1, same five lines: correct the `worktreeAge` comment and the test name. A
+- [x] Round 1, same five lines: correct the `worktreeAge` comment and the test name. A
       directory mtime moves only when a top-level entry changes, not when a file inside it is
       edited, so the guard is a creation grace — say that rather than "when did anything last
       happen here".
@@ -162,3 +162,19 @@ that vanishes. Recorded rather than guarded.
   the reflog is absent or expired, so criterion 1 "at any age" is really "for 90 days"; a branch
   created from a remote-tracking ref never being collected; and the sweep still saying only
   `removed worktree <dir>` with no reason.
+- 2026-10-26 Reworked round 1. `graceMinutes()` refuses a grace period that is not finite and
+  positive, naming the value it refused on stderr and keeping the 30-minute default — the
+  blocking finding, and the one that mattered because the whole design rests on there being two
+  guards rather than one. The reflog is now read from `refs/heads/<branch>`, with a test that
+  fails against the bare name. The `worktreeAge` comment and test name now say what mtime
+  actually knows: a directory mtime moves only when a top-level entry changes, so this is a
+  creation grace, not a last-used grace — behaviour unchanged, the claim was the defect, and
+  all three reviewers found it independently.
+  161 tests, typecheck clean. Every acceptance criterion re-driven through the real
+  `pruneWorktree` against throwaway `git init` repos rather than trusting the suite: empty
+  branch at 400 days kept, merged branch kept inside the grace period and collected outside
+  it, dirty kept, unmerged kept, detached kept, and `""`, `"30m"`, `"0"`, `"-1"` all falling
+  back to 30. The last criterion stays ticked on the previous build's live-runner check: the
+  fresh-worktree path is untouched by this rework, and re-verifying against the running runner
+  would mean it running this code, which only the merge does.
+  PR: https://github.com/JesperJ/swfactory/pull/19
