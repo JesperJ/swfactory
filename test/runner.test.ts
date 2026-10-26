@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
+import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, graceMinutes, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
 import type { IdleSession, Job } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -502,6 +502,27 @@ test("a fast-forward merge still leaves a collectable tree", () => {
   assert.equal(branchHasOwnCommits(repo, "feature/001-a"), true, "it was committed to, ff or not");
   backdate(wt);
   assert.equal(pruneWorktree(repo, wt), "removed");
+});
+
+test("a grace period that is not a positive number of minutes is refused, loudly", () => {
+  // The values worth testing are the ones a person actually types into a unit file. `""` is a
+  // blank `Environment=FACTORY_WORKTREE_GRACE_MINUTES=` line and `"30m"` is the duration
+  // spelled the way most tools spell it; both used to parse into something `age < x` is never
+  // true for, which removed the guard without saying a word.
+  const said: string[] = [];
+  const warn = (m: string) => said.push(m);
+
+  assert.equal(graceMinutes(undefined, warn), 30, "unset means the default");
+  assert.equal(graceMinutes("45", warn), 45, "a plain number is honoured");
+  assert.equal(graceMinutes("0.5", warn), 0.5, "and so is a fraction of a minute");
+  assert.deepEqual(said, [], "nothing valid is complained about");
+
+  for (const bad of ["", "30m", "half an hour", "0", "-1", "NaN", "Infinity"]) {
+    assert.equal(graceMinutes(bad, warn), 30, `${JSON.stringify(bad)} falls back to the default`);
+  }
+  assert.equal(said.length, 7, "each rejected value is reported once");
+  assert.match(said[1], /FACTORY_WORKTREE_GRACE_MINUTES="30m"/, "and names the value it refused");
+  assert.match(said[1], /keeping 30/, "and what it is using instead");
 });
 
 test("worktree age is measured from the last time anything happened there", () => {

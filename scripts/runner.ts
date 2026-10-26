@@ -155,10 +155,36 @@ export function ensureWorktree(repoPath: string, plan: WorktreePlan, base: strin
 // outside the repository. It never passes --force: an interrupted build's unsaved work is worth
 // more than a tidy cache, so a dirty tree is kept and simply tried again next time.
 // How long a worktree is left alone regardless of how its branch looks. Covers the case the
-// tip check cannot: an empty branch whose base moves on underneath it, which then reads as
-// merged while still being brand new. It also matches the situation the bug came from — someone
-// just made that directory and is about to type in it.
-const WORKTREE_GRACE_MINUTES = Number(process.env.FACTORY_WORKTREE_GRACE_MINUTES ?? 30);
+// reflog check cannot: an empty branch whose reflog has expired, which then reads as merged
+// while still being brand new. It also matches the situation the bug came from — someone just
+// made that directory and is about to type in it.
+const WORKTREE_GRACE_DEFAULT_MINUTES = 30;
+
+// `Number("")` is 0 and `Number("30m")` is NaN, and `age < NaN` is false — so the plain
+// `Number(process.env...)` this started as meant that a blank `Environment=` line in the unit
+// file, or minutes written the way every other tool spells a duration, switched the grace guard
+// off in complete silence. That is one typo away from the bug this feature exists to fix, on the
+// only code in the factory that deletes a directory outside the repository, so it is worth the
+// eight lines: anything that is not a positive, finite number of minutes is refused out loud and
+// the default stands. `warn` is a parameter so the tests can read the complaint instead of
+// printing it.
+export function graceMinutes(
+  raw: string | undefined,
+  warn: (message: string) => void = console.error,
+): number {
+  if (raw === undefined) return WORKTREE_GRACE_DEFAULT_MINUTES;
+  const minutes = Number(raw);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    warn(
+      `[runner] ignoring FACTORY_WORKTREE_GRACE_MINUTES=${JSON.stringify(raw)}: ` +
+        `not a positive number of minutes, keeping ${WORKTREE_GRACE_DEFAULT_MINUTES}`,
+    );
+    return WORKTREE_GRACE_DEFAULT_MINUTES;
+  }
+  return minutes;
+}
+
+const WORKTREE_GRACE_MINUTES = graceMinutes(process.env.FACTORY_WORKTREE_GRACE_MINUTES);
 
 // Minutes since the directory last changed. The plan said birth time falling back to mtime;
 // building it showed that was both untestable and pointless. `utimes` cannot move a birth time,
