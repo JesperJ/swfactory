@@ -1,6 +1,6 @@
 ---
 title: The sweep stops eating worktrees that were never used
-status: reviewing
+status: done
 priority: P1
 summary: A worktree created by hand is deleted within seconds, because an empty branch and a merged branch look identical to the sweep.
 ---
@@ -178,3 +178,20 @@ that vanishes. Recorded rather than guarded.
   fresh-worktree path is untouched by this rework, and re-verifying against the running runner
   would mean it running this code, which only the merge does.
   PR: https://github.com/JesperJ/swfactory/pull/19
+- 2026-10-26 **Done**, on your call, and the round file predates the code it is being passed
+  against — so this is recorded as a decision rather than a clean pass.
+  What is true: round 1's single blocking finding was fixed and the fix is merged (PR #19),
+  every acceptance criterion is ticked, 161 tests and typecheck are green, and the reworking
+  session re-drove every criterion through the real `pruneWorktree` against throwaway
+  `git init` repos instead of trusting the suite — empty branch at 400 days kept, merged branch
+  kept inside the grace period and collected outside it, dirty kept, unmerged kept, detached
+  kept, and `""`, `"30m"`, `"0"`, `"-1"` all falling back to 30.
+  What is not: no round 2 ran, so nothing independent has read the rework. The rework was
+  small — read the reflog from `refs/heads/<branch>` rather than a bare name, reject a
+  non-positive grace period, and correct a comment of mine that claimed mtime answers "when did
+  anything last happen here" when a directory's mtime only moves when a top-level entry
+  changes, making it a creation grace rather than a last-used one. All three reviewers found
+  that false claim independently; it was the fourth such comment of mine in a day.
+  The live-runner check stays ticked from the previous build, which is honest: the
+  fresh-worktree path is untouched by the rework, and re-verifying it would require the runner
+  to be running this code, which only the merge accomplishes — and the merge has now happened.
