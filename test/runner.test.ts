@@ -549,11 +549,32 @@ test("the reflog is read from refs/heads, so a branch named after a ref is not c
   );
 });
 
-test("worktree age is measured from the last time anything happened there", () => {
+test("worktree age is measured from the directory's own mtime, not from work inside it", () => {
   const dir = mkdtempSync(join(tmpdir(), "factory-age-"));
+  // Laid out before backdating, because *adding* a top-level entry does move the directory's
+  // mtime — it is editing what is already there that does not.
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "a.txt"), "one\n");
+  writeFileSync(join(dir, "top.txt"), "one\n");
+
   assert.ok(worktreeAge(dir) < 1, "a directory just made is new");
   backdate(dir, 90);
   assert.ok(Math.abs(worktreeAge(dir) - 90) < 1, "and an hour and a half old after backdating");
+
+  // Pinning the limit the comment now admits to: working in the tree does not make it young
+  // again, so this is a creation grace rather than a last-used one. If either of these ever
+  // starts failing, the guard has become stronger than it claims and the comment must say so.
+  writeFileSync(join(dir, "src", "a.txt"), "edited\n");
+  assert.ok(
+    Math.abs(worktreeAge(dir) - 90) < 1,
+    "a file edited in a subdirectory leaves the tree's age alone",
+  );
+  writeFileSync(join(dir, "top.txt"), "edited\n");
+  assert.ok(
+    Math.abs(worktreeAge(dir) - 90) < 1,
+    "and so does rewriting a file that was already at the top level",
+  );
+
   // A path that is not there cannot be judged old, so it is treated as new and left alone.
   assert.equal(worktreeAge(join(dir, "nope")), 0);
 });

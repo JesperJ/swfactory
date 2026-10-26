@@ -186,13 +186,19 @@ export function graceMinutes(
 
 const WORKTREE_GRACE_MINUTES = graceMinutes(process.env.FACTORY_WORKTREE_GRACE_MINUTES);
 
-// Minutes since the directory last changed. The plan said birth time falling back to mtime;
-// building it showed that was both untestable and pointless. `utimes` cannot move a birth time,
-// so the guard could never be exercised without waiting out the real clock — and a tree created
-// a minute ago always has a fresh mtime anyway, so mtime alone already answers "was this made
-// just now". What it answers better is the question actually being asked: when did anything last
-// happen here. A tree created months ago but written to a minute ago should be kept, and mtime
-// says so while a birth time does not.
+// Minutes since a top-level entry of the worktree directory last changed — which for a tree
+// nobody has touched is the same as minutes since it was made.
+//
+// Be precise about what this knows, because the first version of this comment was not and all
+// three reviewers caught it. A directory's mtime moves when an entry is created, removed or
+// renamed *in that directory*; it does not move when a file inside it, or anywhere below it, is
+// edited. So this is a creation grace, not a last-used grace: a tree somebody has been working
+// in for three hours reads as three hours old. That is enough for what the guard is for — the
+// tree somebody just made by hand and is about to type in — and the dirty check above covers
+// the tree being worked in, since work in progress is uncommitted by definition.
+//
+// mtime rather than the planned birth time because `utimes` cannot move a birth time, so the
+// guard could not be exercised without waiting out the real clock.
 export function worktreeAge(dir: string, now = new Date()): number {
   try {
     return (now.getTime() - statSync(dir).mtimeMs) / 60_000;
