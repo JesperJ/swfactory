@@ -546,25 +546,44 @@ function enableSwipe() {
 // ---------- staying current ----------
 // This page never navigates, so without this it renders fresh data with whatever code it
 // loaded hours ago — which looks exactly like a bug, and was reported as one three times.
-let bootBuild = null;
-let differingReads = 0;
+// The id of the code this page is actually running, stamped into the document that carried
+// it. Round 1 found the hole in adopting the first id the server reports: a rebuild landing
+// between fetching app.js and the first hello makes the page record the *new* id as its own
+// and never reload — superseded code believing it is current, the exact failure this exists to
+// prevent. Taking it from the document closes that window, because the id and the code arrive
+// in the same response.
+const bootBuild = document.querySelector('meta[name="build"]')?.content || null;
 let reloading = false;
 
+// Reloading is a page's last act, so a guard held in a variable dies with it. Two servers on
+// different builds behind one name — a rolling restart, or the dev server and the container
+// both up — would otherwise have each life reload exactly once, forever. sessionStorage
+// outlives the reload and is per-tab, which is the right scope for "this tab is flapping".
+const RELOAD_KEY = "factory:reloads";
+function reloadsRecently() {
+  try {
+    const at = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || "[]");
+    return at.filter((t) => Date.now() - t < 60_000);
+  } catch {
+    return []; // private mode, or something else wrote the key — behave as if fresh
+  }
+}
+
 function checkBuild(build) {
-  if (!build) return;
-  if (bootBuild === null) {
-    bootBuild = build;
-    return;
-  }
-  if (build === bootBuild) {
-    differingReads = 0;
-    return;
-  }
-  // Twice in a row, so a server that flaps between versions cannot put the page in a loop.
-  if (++differingReads < 2 || reloading) return;
-  // Never yank the page out from under an open sheet or a tap that is still in flight.
+  // No id, or a page served without the meta tag: say nothing rather than guess.
+  if (!build || !bootBuild || reloading) return;
+  if (build === bootBuild) return;
+  // Never yank the page out from under an open sheet or a tap still in flight.
   if (sheetKey || queueInFlight) return showUpdateBanner();
+  // Flapping: stop reloading and let the person decide.
+  const recent = reloadsRecently();
+  if (recent.length >= 2) return showUpdateBanner();
   reloading = true;
+  try {
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify([...recent, Date.now()]));
+  } catch {
+    // Not being able to record it is not a reason to refuse the reload.
+  }
   location.reload();
 }
 
@@ -648,16 +667,24 @@ document.addEventListener("click", async (e) => {
     start.disabled = true;
     start.textContent = "Starting…";
     queueInFlight = true;
-    const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ project, feature, command }),
-    });
-    if (!res.ok) {
-      const { error } = await res.json().catch(() => ({ error: "could not queue" }));
-      start.textContent = esc(error ?? "failed");
+    // finally, because a rejected fetch — the server restarting, which is precisely when a
+    // build id changes — used to leave this true for the rest of the page's life, quietly
+    // downgrading every later version change to a manual prompt.
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project, feature, command }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: "could not queue" }));
+        start.textContent = esc(error ?? "failed");
+      }
+    } catch {
+      start.textContent = "could not queue";
+    } finally {
+      queueInFlight = false;
     }
-    queueInFlight = false;
     load();
     return;
   }
