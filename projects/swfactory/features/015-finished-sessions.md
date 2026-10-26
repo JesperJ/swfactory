@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: reviewing
+status: building
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -132,7 +132,13 @@ The guards are the part worth testing hardest: never a `needs_you` session, neve
 one, and never silently.
 
 ## Tasks (round 2 rework)
-- [ ] Bind the kill to an identity the reporter does not control
+- [ ] Make a retarget cost the clock: `upsert` moves `status_since` when `branch`, `cwd` or
+      `repo` change, not only when the status does
+- [ ] `samePath` compares identities, not arithmetic: a relative path is never a match
+- [ ] Correct the two false claims in comments and spec — the path bind does not cover the
+      `busy` case, and `cwd` is not an identity the reporter does not control
+- [ ] A test for the retarget itself: the attack sequence, asserted to cost the full window
+- [ ] (deferred, own spec) Bind the kill to an identity the reporter does not control
       — the bind that shipped is to `cwd`, which arrives in the **same POST** as `branch`, from
       `payload.cwd` with no validation. It refuses an attacker who rewrites one field and
       declines to rewrite its neighbour. Ticked while false.
@@ -330,3 +336,11 @@ one, and never silently.
   **The question put to the user:** what should the kill be gated on — the job table, which the
   runner wrote itself and no hook can forge, or one line in `upsert` moving `status_since`
   whenever `branch`, `cwd` or `repo` change, which makes a retarget cost 8 hours per attempt?
+- 2026-10-26 Decision taken by the user: the one-line `upsert` fix now, the job table as its
+  own spec. A retarget then costs 8 hours per attempt rather than nothing, which closes the
+  attack today without a fourth change to a destructive path that has failed three reviews.
+  The reasoning for preferring it, recorded because it is the part that generalises: the job
+  table is the better fix and touches the code whose design has been wrong three times running.
+  The one-liner touches `upsert`, which has been correct throughout and whose rule — "a real
+  change resets the clock" — already exists and is already tested. It extends an existing rule
+  rather than adding a new mechanism to the part of the system with the worst track record.
