@@ -330,13 +330,21 @@ async function reconcile(): Promise<void> {
 // fresh, actively-working session died within a tick. The dry run in the spec had already shown
 // three different rows resolving to one name; nobody read it as the defect it was.
 //
+// Round 2 found the replacement half-built. The identity check only refused a tmux session
+// created *after* the row went idle, so anything older stayed reachable — and long-lived
+// detached sessions are exactly what this feature exists to kill, which meant the attack and
+// the feature shared a target class. Both reviewers reproduced it against the live 006 session:
+// one hook POST rewriting `branch` keeps the old clock and acquires a new target, and the check
+// passes because that session predates the row. The kill is now bound to `#{session_path}`
+// instead, which a retargeting hook would also have to fake.
+//
 // So, in order:
 //   - Only `your_turn`. A `needs_you` session is blocked on a person, which is the entire
 //     reason tmux was chosen over headless.
 //   - Only past the threshold, re-checked here. The dashboard filters too; a destructive act
 //     must not rest on one component's filter being right.
-//   - Only a session the runner could have named itself.
-//   - Only a name no *other* live session is using for something that is not idle.
+//   - Only a session the runner could have named itself, and that said where it was running.
+//   - Only a tmux session living in that same directory, and not newer than the row.
 export function idleCandidates(
   sessions: IdleSession[],
   projects: Project[],
@@ -345,26 +353,35 @@ export function idleCandidates(
 ): { session: IdleSession; name: string }[] {
   const cutoff = now.getTime() - hours * 3600_000;
   const out: { session: IdleSession; name: string }[] = [];
-  // A name another row claims while being anything but idle is a name with a live owner.
-  const busy = new Set<string>();
-  for (const s of sessions) {
-    if (s.status === "your_turn") continue;
-    const { project, feature } = linkSession(s as Session, projects);
-    if (project && feature) busy.add(sessionName({ project, feature } as Job));
-  }
-
+  // Round 2 removed a `busy` set here that skipped a name another live row claimed. It could
+  // never fire: `idleSessions` returns only `your_turn` rows and the set was built by skipping
+  // `your_turn` rows, so it was empty on every tick. The test that covered it handed in a
+  // `working` row by hand — input the endpoint cannot produce — so it passed while proving
+  // nothing, and the task describing it was ticked. The case it was meant to catch is covered
+  // properly now, by matching where the session actually lives (see `endIdleSessions`).
   for (const s of sessions) {
     if (s.status !== "your_turn") continue;
     const since = new Date(s.status_since ?? "").getTime();
     // An unparseable or future timestamp is not evidence of idleness.
     if (!Number.isFinite(since) || since > cutoff) continue;
+    // A row that does not say where it was running cannot be matched to a session, and an
+    // unmatched row must not authorise a kill.
+    if (!s.cwd) continue;
     const { project, feature } = linkSession(s as Session, projects);
     if (!project || !feature) continue;
-    const name = sessionName({ project, feature } as Job);
-    if (busy.has(name)) continue;
-    out.push({ session: s, name });
+    out.push({ session: s, name: sessionName({ project, feature } as Job) });
   }
   return out;
+}
+
+// A skip that repeats unchanged every ten seconds is not an event. Round 2 measured 53,623 of
+// the runner's 53,687 journal lines as one repeated "but attached" line about a single session,
+// against three real kills. The reason is logged when it changes, and then not again.
+const lastSkip = new Map<string, string>();
+function logSkip(name: string, reason: string): void {
+  if (lastSkip.get(name) === reason) return;
+  lastSkip.set(name, reason);
+  console.log(`[runner] ${reason}`);
 }
 
 async function endIdleSessions(): Promise<void> {
@@ -385,24 +402,42 @@ async function endIdleSessions(): Promise<void> {
   const now = new Date();
   for (const { session, name } of idleCandidates(sessions, loadProjects(SPECS_DIR), SESSION_IDLE_HOURS, now)) {
     const info = await tmuxSession(name);
-    if (!info) continue;
-    if (info.attached) {
-      console.log(`[runner] ${name} (session ${session.id}) idle since ${session.status_since} but attached — leaving it alone`);
+    if (!info) continue; // no session by that name, and nothing to say about it
+    if (info.unreachable) {
+      logSkip(name, `cannot reach tmux to ask about ${name} — ending nothing`);
       continue;
     }
-    // The identity check, and the reason this is not just a name lookup. A tmux session created
-    // *after* the row went idle cannot be the thing that went idle — it is a different session
-    // wearing the same name, and killing it destroys work in progress.
-    if (info.created.getTime() > new Date(session.status_since ?? 0).getTime()) {
-      console.log(
-        `[runner] ${name} started ${info.created.toISOString()}, after session ${session.id} went idle at ${session.status_since} — not the same session, leaving it alone`,
+    if (info.attached) {
+      logSkip(name, `${name} (session ${session.id}) idle since ${session.status_since} but attached — leaving it alone`);
+      continue;
+    }
+    // The identity check, and the reason this is not a name lookup. Round 2: comparing only
+    // creation time was one-directional — it refused sessions newer than the row and let every
+    // older one through, which is the class this feature targets. The row says where it was
+    // running; a tmux session somewhere else is a different session wearing the same name.
+    if (!samePath(info.path, session.cwd)) {
+      logSkip(
+        name,
+        `${name} lives in ${info.path}, but session ${session.id} reported ${session.cwd} — not the same session, leaving it alone`,
+      );
+      continue;
+    }
+    // And it still cannot be newer than the row that says it went idle. `NaN` refuses: round 2
+    // found this was the one guard on the path that failed open on unparseable input.
+    const createdAt = info.created.getTime();
+    const idleAt = new Date(session.status_since ?? "").getTime();
+    if (!Number.isFinite(createdAt) || !Number.isFinite(idleAt) || createdAt > idleAt) {
+      logSkip(
+        name,
+        `${name} started ${info.created.toISOString()}, after session ${session.id} went idle at ${session.status_since} — not the same session, leaving it alone`,
       );
       continue;
     }
     try {
       await run("tmux", ["kill-session", "-t", `=${name}`], { timeout: 10_000 });
+      lastSkip.delete(name);
       console.log(
-        `[runner] ended ${name} (session ${session.id}): your_turn since ${session.status_since}, over ${SESSION_IDLE_HOURS}h, nothing pending`,
+        `[runner] ended ${name} (session ${session.id}): your_turn since ${session.status_since}, over ${SESSION_IDLE_HOURS}h, in ${info.path}, nothing pending`,
       );
     } catch (err) {
       console.error(`[runner] could not end ${name} (session ${session.id}):`, (err as Error).message);
@@ -410,24 +445,60 @@ async function endIdleSessions(): Promise<void> {
   }
 }
 
+// Two paths are the same session's home if they resolve to the same place. Compared with
+// `resolve` rather than as strings so a trailing slash or a `.` segment is not treated as a
+// different directory; symlinks are deliberately not followed, because the check must not
+// depend on a filesystem the reporter could arrange.
+export function samePath(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  return resolve(a) === resolve(b);
+}
+
+export interface TmuxSession {
+  attached: boolean;
+  created: Date;
+  path: string | null;
+  /** tmux could not be asked at all — every guard must refuse rather than proceed. */
+  unreachable: boolean;
+}
+
+// Parsing kept separate from running tmux so it can be tested, which round 2 pointed out this
+// function was not: it owns the format string and the catch-all, on the path that ends
+// processes, and had no test of any kind.
+//
+// The path is last in the format and taken as the whole remainder, because a directory may
+// contain spaces while the two numeric fields may not.
+export function parseTmuxSession(stdout: string): TmuxSession | null {
+  const line = stdout.trim();
+  if (!line) return null; // no session by that name
+  const m = line.match(/^(\d+)\s+(\d+)\s*(.*)$/);
+  // Output we cannot read is not evidence of anything. Refuse, as if tmux were unreachable.
+  if (!m) return { attached: true, created: new Date(8640000000000000), path: null, unreachable: true };
+  return {
+    attached: m[1] !== "0",
+    created: new Date(Number(m[2]) * 1000),
+    path: m[3] || null,
+    unreachable: false,
+  };
+}
+
 // What tmux knows about a session, or null if there is none by that name. One call rather than
 // three: round 1 pointed out that existence, attachment and the kill were separate invocations,
 // so attaching in the gap between them got your terminal killed — the exact scenario the attach
-// guard exists to prevent.
-export async function tmuxSession(name: string): Promise<{ attached: boolean; created: Date } | null> {
+// guard exists to prevent. One gap remains, before the kill itself.
+export async function tmuxSession(name: string): Promise<TmuxSession | null> {
   try {
     const out = await run(
       "tmux",
-      ["list-sessions", "-F", "#{session_attached} #{session_created}", "-f", `#{==:#{session_name},${name}}`],
+      ["list-sessions", "-F", "#{session_attached} #{session_created} #{session_path}", "-f", `#{==:#{session_name},${name}}`],
       { timeout: 10_000 },
     );
-    const line = out.stdout.trim();
-    if (!line) return null; // no session by that name
-    const [attached, created] = line.split(/\s+/);
-    return { attached: attached !== "0", created: new Date(Number(created) * 1000) };
+    return parseTmuxSession(out.stdout);
   } catch {
-    // Cannot tell. Report it as attached and as new as possible, so every guard below refuses.
-    return { attached: true, created: new Date(8640000000000000) };
+    // tmux exits 1 when there is no server at all, which is not the same as "no such session".
+    // Round 2 found this logged "but attached" about sessions that did not exist — safe, but a
+    // falsehood on the path whose criterion is that the log says why.
+    return { attached: true, created: new Date(8640000000000000), path: null, unreachable: true };
   }
 }
 

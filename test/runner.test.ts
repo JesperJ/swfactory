@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, pruneWorktree, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
+import { commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
 import type { IdleSession, Job } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -380,18 +380,53 @@ test("a session the runner could not have named is left alone", () => {
   assert.deepEqual(candidates([session({ branch: "main" })]), []);
 });
 
-test("a name another live session is using is never a target", () => {
-  // The round 1 defect, in its cheapest form: a stale row and a fresh session on the same
-  // feature. The stale row names the tmux session the fresh one is sitting in.
-  const stale = session({ id: "stale", status_since: hoursBefore(20) });
-  const fresh = session({ id: "fresh", status: "working", status_since: hoursBefore(0.01) });
-  assert.deepEqual(candidates([stale, fresh]), [], "the stale row must not name the live session");
-  // Alone, the stale row is still a candidate — it is the live owner that protects the name.
-  assert.equal(candidates([stale]).length, 1);
+test("a row that does not say where it ran cannot authorise a kill", () => {
+  // The kill is bound to the session's directory, so a row with no cwd has nothing to bind to.
+  assert.deepEqual(candidates([session({ cwd: null })]), []);
 });
 
 test("a done feature's session is still a candidate — done is what makes it endable", () => {
   // The 006 session alive since the previous evening is exactly the case this exists for.
   const out = candidates([session({ branch: "feature/006-ntfy" })]);
   assert.equal(out[0]?.name, "factory-swfactory-006-ntfy");
+});
+
+// --- the identity bind ---------------------------------------------------------------------
+//
+// Round 2: comparing only creation time refused sessions *newer* than the row and let every
+// older one through — and long-lived detached sessions are what this feature targets, so the
+// attack and the feature shared a target class. Both reviewers reproduced a retarget against
+// the real 006 session: one hook POST rewriting `branch` keeps the old clock, and the check
+// passed because that session predated the row.
+
+test("a tmux session living somewhere else is not the session that went idle", () => {
+  assert.equal(samePath("/home/me/code/repos/swfactory", "/home/me/code/repos/swfactory"), true);
+  // Same place, spelled differently, is still the same place.
+  assert.equal(samePath("/home/me/code/repos/swfactory/", "/home/me/code/repos/swfactory"), true);
+  assert.equal(samePath("/home/me/code/repos/./swfactory", "/home/me/code/repos/swfactory"), true);
+  // The retarget: the attacker's row claims a feature branch, but reports its own cwd.
+  assert.equal(samePath("/home/jesper/.cache/factory/worktrees/swfactory-006", "/home/me/elsewhere"), false);
+  // Nothing to compare is never a match. A missing path must not read as agreement.
+  assert.equal(samePath(null, "/x"), false);
+  assert.equal(samePath("/x", null), false);
+  assert.equal(samePath(null, null), false);
+});
+
+test("tmux output is parsed, and anything unreadable refuses rather than proceeds", () => {
+  const ok = parseTmuxSession("0 1761250901 /home/me/code/repos/swfactory\n");
+  assert.equal(ok?.attached, false);
+  assert.equal(ok?.created.toISOString(), new Date(1761250901_000).toISOString());
+  assert.equal(ok?.path, "/home/me/code/repos/swfactory");
+  assert.equal(ok?.unreachable, false);
+
+  assert.equal(parseTmuxSession("1 1761250901 /x")?.attached, true);
+  // A directory may contain spaces; the two numeric fields may not, so the path is the rest.
+  assert.equal(parseTmuxSession("0 1761250901 /home/me/my code/repo")?.path, "/home/me/my code/repo");
+  // No session by that name.
+  assert.equal(parseTmuxSession("   "), null);
+  // Output we cannot read is not evidence of anything: refuse, as if tmux were unreachable.
+  const junk = parseTmuxSession("something unexpected");
+  assert.equal(junk?.unreachable, true);
+  assert.equal(junk?.attached, true, "an unreadable answer must not be read as detached");
+  assert.equal(junk?.path, null, "and must not match any cwd");
 });

@@ -175,3 +175,22 @@ test("idleSessions ships only what the runner needs to identify a session", () =
   const [row] = st.idleSessions(8, now);
   assert.deepEqual(Object.keys(row).sort(), ["branch", "cwd", "feature_hint", "id", "repo", "status", "status_since"]);
 });
+
+test("a blocked session is never aged out of what the dashboard serves", () => {
+  // Round 2: rankNext was fixed to let blocked work rank however long it had waited, while
+  // list()'s 14-day gate quietly dropped it — and the test added as proof asserted exactly 14
+  // days, passing only because it called rankNext directly. This asserts the layer that was
+  // actually wrong, at values past the gate.
+  const st = new Store(":memory:");
+  const daysAgo = (d: number) => new Date(Date.now() - d * 86400_000).toISOString();
+  st.upsert({ id: "blocked-20d", event: "Notification", status: "needs_you" }, daysAgo(20));
+  st.upsert({ id: "blocked-60d", event: "Notification", status: "needs_you" }, daysAgo(60));
+  st.upsert({ id: "finished-20d", event: "Stop", status: "your_turn" }, daysAgo(20));
+
+  const ids = st.list().map((s) => s.id).sort();
+  assert.deepEqual(ids, ["blocked-20d", "blocked-60d"], "blocked work survives; a finished session still ages out");
+
+  // Dismissing is still the way to make one go away — the gate is about time, not about intent.
+  st.dismiss("blocked-60d");
+  assert.deepEqual(st.list().map((s) => s.id), ["blocked-20d"]);
+});
