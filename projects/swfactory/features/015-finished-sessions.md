@@ -132,10 +132,12 @@ The guards are the part worth testing hardest: never a `needs_you` session, neve
 one, and never silently.
 
 ## Tasks (round 2 rework)
-- [x] Bind the kill to an identity the reporter does not control: `#{session_path}` must match
-      the row's `cwd`, so retargeting a row also requires faking where the session lives
-- [x] Make the `busy` guard able to fire, or remove it — a ticked task must not describe a
-      branch that cannot execute through the real endpoint
+- [ ] Bind the kill to an identity the reporter does not control
+      — the bind that shipped is to `cwd`, which arrives in the **same POST** as `branch`, from
+      `payload.cwd` with no validation. It refuses an attacker who rewrites one field and
+      declines to rewrite its neighbour. Ticked while false.
+- [x] Make the `busy` guard able to fire, or remove it — removed; but the claim that the path
+      bind covers its case is false, since two sessions in one tmux session share a directory
 - [x] The `created` comparison must refuse on `NaN` rather than proceed: it is the one guard
       on this path that fails open
 - [x] Tell "no tmux session" apart from "cannot reach tmux", and stop logging "but attached"
@@ -302,3 +304,29 @@ one, and never silently.
   `needs_you`, with the test asserting it at 20 and 60 days through `list()` rather than through
   the one layer that had no cutoff; and the endpoint's floor and default are separate numbers.
   151 tests, typecheck clean.
+- 2026-10-26 Reviewed, round 3: code 2 blocking / 9 minor, security 1 blocking / 5 minor,
+  UX 0 blocking / 6 minor. Findings in `reviews/015-round-3.md`.
+  **Escalated rather than reworked a third time.** Five of the six prior blocking findings are
+  closed and were re-verified rather than trusted. The sixth is the same finding for the third
+  round: the kill is gated on `cwd`, which `src/hooks.ts:46` reads straight from the POST body
+  and `src/db.ts:144` merges with `pick` on the line *adjacent* to `branch`, under a status
+  change that does not move the clock. Both reviewers reproduced the retarget against the live
+  006 session with one extra line in the request; both identity guards pass and only the attach
+  guard stops it. The fix was chosen in round 2 and implemented here without checking its
+  premise — that `cwd` is not reporter-controlled. It is.
+  Two further errors of mine, both in things I wrote rather than things I missed: `samePath`
+  does path arithmetic, not identity, so `cwd: "."` resolves against the runner's own working
+  directory and matches the shared checkout; and the claim that removing `busy` was safe because
+  the path bind covers its case is false, since two Claude sessions in one tmux session report
+  the same directory.
+  The pattern security named is the useful output of the round: **three consecutive rounds, each
+  with a passing test whose premise the real path does not have** — round 1's `needs_you`
+  comment, round 2's `busy` input, round 3's `samePath` test, which assumes the attacker
+  declines to set `cwd`.
+  UX raised no blocking finding and verified the `needs_you` fix end to end out to 400 days, but
+  recorded a structural consequence the spec has never addressed: `needs_you` is now the only
+  row class with no automatic retirement path at all, and a host reboot — monthly on this
+  machine — leaves exactly such a row behind.
+  **The question put to the user:** what should the kill be gated on — the job table, which the
+  runner wrote itself and no hook can forge, or one line in `upsert` moving `status_since`
+  whenever `branch`, `cwd` or `repo` change, which makes a retarget cost 8 hours per attempt?
