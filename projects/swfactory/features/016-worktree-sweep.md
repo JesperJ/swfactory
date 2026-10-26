@@ -1,6 +1,6 @@
 ---
 title: The sweep stops eating worktrees that were never used
-status: reviewing
+status: building
 priority: P1
 summary: A worktree created by hand is deleted within seconds, because an empty branch and a merged branch look identical to the sweep.
 ---
@@ -115,6 +115,18 @@ that vanishes. Recorded rather than guarded.
 - [x] `pruneWorktree` keeps a tree younger than the grace period, with a test that backdates
 - [x] A test proving a genuinely merged feature branch is still collected, so 013 survives
 - [x] Verified for real: make a worktree by hand with the runner running and watch it live
+- [ ] Round 1 blocking: validate `FACTORY_WORKTREE_GRACE_MINUTES` — reject a non-finite or
+      non-positive value, fall back to 30, and say so on stderr. `""` parses to `0` and `"30m"`
+      to `NaN`, and `age < NaN` is `false`, so a one-token typo in the unit file silently
+      deletes the grace guard entirely. Test the rejected values.
+- [ ] Round 1, same five lines, taken now rather than in another round: pass
+      `refs/heads/${branch}` to `git reflog show`, not the bare name — a bare name resolves
+      `refs/<name>` ahead of `refs/heads/<name>`, so a branch named `stash` reads the stash
+      reflog instead and the guard reports commits a branch does not have.
+- [ ] Round 1, same five lines: correct the `worktreeAge` comment and the test name. A
+      directory mtime moves only when a top-level entry changes, not when a file inside it is
+      edited, so the guard is a creation grace — say that rather than "when did anything last
+      happen here".
 
 ## Log
 - 2026-10-26 Specced and planned together: the diagnosis was already in hand from reproducing it
@@ -139,3 +151,14 @@ that vanishes. Recorded rather than guarded.
   Verified for real, which is what the bug report deserved: with the runner restarted onto this
   code, `git worktree add` by hand at 17:55:29 survived seven sweep ticks with no journal
   mention. Its predecessor on 24 Oct was deleted about twenty seconds in.
+- 2026-10-26 Review round 1: code 0 blocking / 5 minor, security 1 blocking / 3 minor, ux 0
+  blocking / 5 minor; 159 tests pass, typecheck clean. Reworked on the one blocking finding —
+  `FACTORY_WORKTREE_GRACE_MINUTES` is unvalidated, and `""` or `"30m"` turns the grace guard
+  off in silence, which is exactly the "both guards, not one" property this spec was built
+  around. Two ten-character correctness fixes from the minors ride along because they live in the
+  same five lines: the ambiguous refname, and a comment that claims more than mtime knows — all
+  three reviewers found that overstatement independently, so it is not a nit.
+  Not reworked now, left for the next round or for a decision: the reflog guard going inert when
+  the reflog is absent or expired, so criterion 1 "at any age" is really "for 90 days"; a branch
+  created from a remote-tracking ref never being collected; and the sweep still saying only
+  `removed worktree <dir>` with no reason.
