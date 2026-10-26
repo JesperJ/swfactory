@@ -1,6 +1,6 @@
 ---
 title: The sweep stops eating worktrees that were never used
-status: planned
+status: reviewing
 priority: P1
 summary: A worktree created by hand is deleted within seconds, because an empty branch and a merged branch look identical to the sweep.
 ---
@@ -37,9 +37,9 @@ is running, which is most of the time.
 its own has not landed, it has not started.** Two independent guards, because this deletes a
 directory and 015's rounds established that one lock on a destructive path is not enough.
 
-**A branch whose tip equals the base's tip is never collected.** Nothing has been committed to it,
-so there is nothing that could have been merged. This is deterministic — no clock, no heuristic —
-and it is the exact shape of the reported bug.
+**A branch that has never been committed to is never collected.** Nothing has landed because
+nothing has started. ~~Compare the branch tip against the base tip~~ — see the Log: that was
+backwards, and the reflog is what actually answers the question.
 
 **A worktree younger than a grace period is never collected**, however its branch looks. This
 covers the case the tip check misses: a fresh empty branch whose base moves on underneath it,
@@ -50,15 +50,15 @@ The sweep's actual job is unchanged: a feature branch whose work is merged still
 which is what 013 was for.
 
 ## Acceptance criteria
-- [ ] A worktree on a branch with no commits of its own is not collected, at any age
-- [ ] A worktree created within the grace period is not collected, even if its branch looks merged
-- [ ] A worktree whose branch has commits that are merged into the base **is** still collected,
+- [x] A worktree on a branch with no commits of its own is not collected, at any age
+- [x] A worktree created within the grace period is not collected, even if its branch looks merged
+- [x] A worktree whose branch has commits that are merged into the base **is** still collected,
       so 013's purpose survives
-- [ ] A worktree with uncommitted changes is still kept, as now
-- [ ] A worktree on an unmerged branch is still kept, as now
-- [ ] The base tree and a detached tree are still kept, as now
-- [ ] Each rule has a test against a real git repository, not a mock
-- [ ] Verified for real: create a worktree by hand with the runner running, and watch it survive
+- [x] A worktree with uncommitted changes is still kept, as now
+- [x] A worktree on an unmerged branch is still kept, as now
+- [x] The base tree and a detached tree are still kept, as now
+- [x] Each rule has a test against a real git repository, not a mock
+- [x] Verified for real: create a worktree by hand with the runner running, and watch it survive
 
 ## Out of scope
 - Changing when the sweep runs. Every tick is right; 013's log says why.
@@ -110,13 +110,32 @@ does not arise in practice, and the failure direction is a tree that survives ra
 that vanishes. Recorded rather than guarded.
 
 ## Tasks
-- [ ] `worktreeAge` returning minutes from the later of birthtime and mtime, with a test
-- [ ] `pruneWorktree` keeps a tree whose branch tip equals the base tip, with a test
-- [ ] `pruneWorktree` keeps a tree younger than the grace period, with a test that backdates
-- [ ] A test proving a genuinely merged feature branch is still collected, so 013 survives
-- [ ] Verified for real: make a worktree by hand with the runner running and watch it live
+- [x] `worktreeAge` returning minutes from the later of birthtime and mtime, with a test
+- [x] `pruneWorktree` keeps a tree whose branch tip equals the base tip, with a test
+- [x] `pruneWorktree` keeps a tree younger than the grace period, with a test that backdates
+- [x] A test proving a genuinely merged feature branch is still collected, so 013 survives
+- [x] Verified for real: make a worktree by hand with the runner running and watch it live
 
 ## Log
 - 2026-10-26 Specced and planned together: the diagnosis was already in hand from reproducing it
   in a throwaway repo, where `git branch --no-merged main --list feature/brand-new` printed
   nothing and both tips read `9e9b58ef`. 5 tasks.
+- 2026-10-26 Built, and the plan was wrong twice. Both were caught by building rather than by
+  thinking harder, which is the argument for writing the test before believing the design.
+  **The tip comparison was not merely insufficient, it was backwards.** A fast-forward merge
+  leaves the *used* branch sitting exactly at the base, while a *fresh* branch is left behind as
+  the base moves on — so the check would have kept finished trees and collected untouched ones,
+  reintroducing 013's bug while appearing to fix this one. Two existing tests failed immediately,
+  which is the only reason it did not ship. The reflog answers the real question: a branch
+  created and never written to has one entry, `branch: Created from <base>`, while a branch that
+  was worked on has commit entries above it. `branchHasOwnCommits` reads that, and falls through
+  to the merge check rather than keeping forever when no reflog is available.
+  **The grace period's timestamp was wrong too.** `birthtime` cannot be moved by `utimes`, so
+  the guard could not be tested without waiting out the real clock — and `mtime` is the better
+  signal anyway: it answers "when did anything last happen here", which is the question being
+  asked, rather than "when was this made".
+  155 tests, typecheck clean, including a case for the fast-forward merge that broke the first
+  attempt and the two pre-existing tests proving merged trees are still collected.
+  Verified for real, which is what the bug report deserved: with the runner restarted onto this
+  code, `git worktree add` by hand at 17:55:29 survived seven sweep ticks with no journal
+  mention. Its predecessor on 24 Oct was deleted about twenty seconds in.

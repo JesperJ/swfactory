@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeFor } from "../scripts/runner.ts";
+import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
 import type { IdleSession, Job } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -22,6 +22,14 @@ function job(over: Partial<Job> = {}): Job {
     finished_at: null,
     ...over,
   };
+}
+
+// Ages a worktree past the grace period. The tests that assert collection all create a tree
+// seconds before checking it, which is precisely what the grace period is there to protect, so
+// they have to say out loud that the tree is old.
+function backdate(dir: string, minutes = 60) {
+  const when = new Date(Date.now() - minutes * 60_000);
+  utimesSync(dir, when, when);
 }
 
 // A throwaway repo root with real git checkouts, so the remote matching is exercised for real.
@@ -224,6 +232,7 @@ test("cleanup removes a clean, merged worktree", () => {
   g("commit", "-qm", "finished");
   execFileSync("git", ["-C", repo, "merge", "-q", "feature/001-a"], { stdio: "ignore" });
 
+  backdate(wt);
   assert.equal(pruneWorktree(repo, wt), "removed");
   assert.equal(existsSync(wt), false);
 });
@@ -260,10 +269,12 @@ test("the sweep collects a merged worktree without needing the job that made it"
   g("add", "done.txt");
   g("commit", "-qm", "finished");
 
+  backdate(wt);
   sweepWorktrees(root);
   assert.equal(existsSync(wt), true, "not merged yet, so it stays");
 
   execFileSync("git", ["-C", repo, "merge", "-q", "feature/001-a"], { stdio: "ignore" });
+  backdate(wt);
   sweepWorktrees(root);
   assert.equal(existsSync(wt), false, "merged, so the next sweep collects it");
 });
@@ -429,4 +440,75 @@ test("tmux output is parsed, and anything unreadable refuses rather than proceed
   assert.equal(junk?.unreachable, true);
   assert.equal(junk?.attached, true, "an unreadable answer must not be read as detached");
   assert.equal(junk?.path, null, "and must not match any cwd");
+});
+
+// --- the sweep must not eat a worktree nobody has used yet -----------------------------------
+//
+// `git worktree add -b feature/x <dir> main` and the directory was gone about twenty seconds
+// later. Not a race: `git branch --no-merged main --list <branch>` prints nothing both for a
+// branch whose work has landed and for a branch that was never written to, so a tree created
+// seconds ago read as finished.
+
+test("a worktree on a branch with no commits of its own is never collected", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "016-new" }), root, base), base);
+
+  // The reported bug, exactly: old enough that the grace period has expired, and still kept.
+  backdate(wt, 60 * 24);
+  assert.equal(branchHasOwnCommits(repo, "feature/016-new"), false);
+  assert.equal(pruneWorktree(repo, wt), "kept", "nothing was ever committed here");
+  assert.equal(existsSync(wt), true);
+
+  // And it survives the base moving on underneath it, which is what made the tip of the branch
+  // an unreliable signal in the first place.
+  execFileSync("git", ["-C", repo, "commit", "-q", "--allow-empty", "-m", "later work"], { stdio: "ignore" });
+  backdate(wt, 60 * 24);
+  sweepWorktrees(root);
+  assert.equal(existsSync(wt), true, "the base moved; the empty tree is still not finished work");
+});
+
+test("a worktree younger than the grace period is left alone however its branch looks", () => {
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  const g = (...a: string[]) => execFileSync("git", ["-C", wt, ...a], { stdio: "ignore" });
+  writeFileSync(join(wt, "done.txt"), "x");
+  g("add", "done.txt");
+  g("commit", "-qm", "finished");
+  execFileSync("git", ["-C", repo, "merge", "-q", "--no-ff", "-m", "merge", "feature/001-a"], { stdio: "ignore" });
+
+  // Merged, so collectable on every other count — but someone was in it a moment ago.
+  assert.equal(pruneWorktree(repo, wt), "kept", "too young to collect");
+  backdate(wt);
+  assert.equal(pruneWorktree(repo, wt), "removed", "past the grace period, the work has landed");
+});
+
+test("a fast-forward merge still leaves a collectable tree", () => {
+  // The case that killed the first fix: after a fast-forward the *used* branch sits exactly at
+  // the base while a fresh branch does not, so comparing tips got both answers backwards.
+  const repo = repoWithCommit();
+  const root = wtRoot();
+  const base = defaultBranch(repo);
+  const wt = ensureWorktree(repo, worktreeFor(job({ feature: "001-a" }), root, base), base);
+  const g = (...a: string[]) => execFileSync("git", ["-C", wt, ...a], { stdio: "ignore" });
+  writeFileSync(join(wt, "done.txt"), "x");
+  g("add", "done.txt");
+  g("commit", "-qm", "finished");
+  execFileSync("git", ["-C", repo, "merge", "-q", "feature/001-a"], { stdio: "ignore" }); // fast-forward
+
+  assert.equal(branchHasOwnCommits(repo, "feature/001-a"), true, "it was committed to, ff or not");
+  backdate(wt);
+  assert.equal(pruneWorktree(repo, wt), "removed");
+});
+
+test("worktree age is measured from the last time anything happened there", () => {
+  const dir = mkdtempSync(join(tmpdir(), "factory-age-"));
+  assert.ok(worktreeAge(dir) < 1, "a directory just made is new");
+  backdate(dir, 90);
+  assert.ok(Math.abs(worktreeAge(dir) - 90) < 1, "and an hour and a half old after backdating");
+  // A path that is not there cannot be judged old, so it is treated as new and left alone.
+  assert.equal(worktreeAge(join(dir, "nope")), 0);
 });

@@ -9,7 +9,7 @@
 // string from the dashboard is ever executed.
 
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -154,6 +154,51 @@ export function ensureWorktree(repoPath: string, plan: WorktreePlan, base: strin
 // Every guard here exists because this is the only code in the factory that deletes a directory
 // outside the repository. It never passes --force: an interrupted build's unsaved work is worth
 // more than a tidy cache, so a dirty tree is kept and simply tried again next time.
+// How long a worktree is left alone regardless of how its branch looks. Covers the case the
+// tip check cannot: an empty branch whose base moves on underneath it, which then reads as
+// merged while still being brand new. It also matches the situation the bug came from — someone
+// just made that directory and is about to type in it.
+const WORKTREE_GRACE_MINUTES = Number(process.env.FACTORY_WORKTREE_GRACE_MINUTES ?? 30);
+
+// Minutes since the directory last changed. The plan said birth time falling back to mtime;
+// building it showed that was both untestable and pointless. `utimes` cannot move a birth time,
+// so the guard could never be exercised without waiting out the real clock — and a tree created
+// a minute ago always has a fresh mtime anyway, so mtime alone already answers "was this made
+// just now". What it answers better is the question actually being asked: when did anything last
+// happen here. A tree created months ago but written to a minute ago should be kept, and mtime
+// says so while a birth time does not.
+export function worktreeAge(dir: string, now = new Date()): number {
+  try {
+    return (now.getTime() - statSync(dir).mtimeMs) / 60_000;
+  } catch {
+    return 0; // cannot tell how old it is, so treat it as new and leave it alone
+  }
+}
+
+// Has anything ever been committed on this branch, as opposed to it merely existing?
+//
+// The plan proposed comparing the branch tip against the base tip. Building it showed that is
+// not only insufficient but backwards: a fast-forward merge leaves the *used* branch sitting
+// exactly at the base, while a fresh branch is left behind as the base moves on. The tip test
+// would have kept finished trees and collected untouched ones — the opposite of the intent, and
+// a quiet reintroduction of the bug 013 existed to fix.
+//
+// The reflog answers the real question. A branch created and never written to has one entry,
+// "branch: Created from <base>"; a branch that was worked on has commit entries above it.
+export function branchHasOwnCommits(repoPath: string, branch: string): boolean {
+  let log: string;
+  try {
+    log = git(repoPath, ["reflog", "show", branch, "--format=%gs"]);
+  } catch {
+    return true; // no reflog to read: fall through to the merge check rather than keep forever
+  }
+  const lines = log.split("\n").filter((l) => l.trim() !== "");
+  // Reflogs can be disabled or expired. Nothing to read is not evidence of nothing happening,
+  // so defer to the checks below rather than keeping the tree for ever.
+  if (lines.length === 0) return true;
+  return lines.some((l) => !/^branch: Created from /.test(l));
+}
+
 export function pruneWorktree(repoPath: string, dir: string): "removed" | "kept" {
   let listed: string;
   try {
@@ -172,6 +217,13 @@ export function pruneWorktree(repoPath: string, dir: string): "removed" | "kept"
     // A detached tree reports "HEAD". It is the shared scratch space non-build jobs stand in,
     // belongs to no feature, and has no branch to be merged — so it is never collectable.
     if (branch === "HEAD") return "kept";
+    // A branch holding no commit of its own has not landed — it has not started. Without this
+    // the merge check below cannot tell the two apart: `--no-merged` prints nothing for a branch
+    // whose work is merged *and* for a branch that was never written to, so a worktree created
+    // seconds ago read as finished and was deleted about twenty seconds into its life.
+    if (!branchHasOwnCommits(repoPath, branch)) return "kept";
+    // Young enough that somebody is probably still using it.
+    if (worktreeAge(dir) < WORKTREE_GRACE_MINUTES) return "kept";
     const unmerged = git(repoPath, ["branch", "--no-merged", base, "--list", branch]);
     if (unmerged !== "") return "kept"; // work not yet in the base branch
     git(repoPath, ["worktree", "remove", dir]);
