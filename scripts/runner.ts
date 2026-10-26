@@ -211,10 +211,15 @@ export function worktreeAge(dir: string, now = new Date()): number {
 //
 // The reflog answers the real question. A branch created and never written to has one entry,
 // "branch: Created from <base>"; a branch that was worked on has commit entries above it.
+//
+// The ref is spelled in full on purpose. A bare name goes through git's disambiguation order,
+// where `refs/<name>` beats `refs/heads/<name>` — so a branch called `stash` would be asked
+// about the *stash* reflog, whose entries never look like "branch: Created from", and an
+// untouched branch would be reported as worked on.
 export function branchHasOwnCommits(repoPath: string, branch: string): boolean {
   let log: string;
   try {
-    log = git(repoPath, ["reflog", "show", branch, "--format=%gs"]);
+    log = git(repoPath, ["reflog", "show", `refs/heads/${branch}`, "--format=%gs"]);
   } catch {
     return true; // no reflog to read: fall through to the merge check rather than keep forever
   }

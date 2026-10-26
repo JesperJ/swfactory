@@ -525,6 +525,30 @@ test("a grace period that is not a positive number of minutes is refused, loudly
   assert.match(said[1], /keeping 30/, "and what it is using instead");
 });
 
+test("the reflog is read from refs/heads, so a branch named after a ref is not confused", () => {
+  // `stash` is the realistic collision: git resolves a bare name through refs/<name> before
+  // refs/heads/<name>, so asking about a branch called "stash" in a repo that has a stash reads
+  // the stash's reflog, which never says "branch: Created from" — and an untouched branch is
+  // then reported as having commits and handed back to the check that cannot tell.
+  const repo = mkdtempSync(join(tmpdir(), "factory-refname-"));
+  const g = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "pipe" });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@example.com");
+  g("config", "user.name", "T");
+  writeFileSync(join(repo, "a.txt"), "one\n");
+  g("add", "a.txt");
+  g("commit", "-qm", "first");
+  writeFileSync(join(repo, "a.txt"), "two\n");
+  g("stash", "push", "-q", "-m", "wip");
+  g("branch", "stash");
+
+  assert.equal(
+    branchHasOwnCommits(repo, "stash"),
+    false,
+    "the branch has no commits of its own, whatever the stash reflog says",
+  );
+});
+
 test("worktree age is measured from the last time anything happened there", () => {
   const dir = mkdtempSync(join(tmpdir(), "factory-age-"));
   assert.ok(worktreeAge(dir) < 1, "a directory just made is new");
