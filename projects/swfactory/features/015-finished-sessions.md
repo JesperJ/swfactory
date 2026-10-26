@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: building
+status: reviewing
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -132,28 +132,28 @@ The guards are the part worth testing hardest: never a `needs_you` session, neve
 one, and never silently.
 
 ## Tasks (round 2 rework)
-- [ ] Bind the kill to an identity the reporter does not control: `#{session_path}` must match
+- [x] Bind the kill to an identity the reporter does not control: `#{session_path}` must match
       the row's `cwd`, so retargeting a row also requires faking where the session lives
-- [ ] Make the `busy` guard able to fire, or remove it — a ticked task must not describe a
+- [x] Make the `busy` guard able to fire, or remove it — a ticked task must not describe a
       branch that cannot execute through the real endpoint
-- [ ] The `created` comparison must refuse on `NaN` rather than proceed: it is the one guard
+- [x] The `created` comparison must refuse on `NaN` rather than proceed: it is the one guard
       on this path that fails open
-- [ ] Tell "no tmux session" apart from "cannot reach tmux", and stop logging "but attached"
+- [x] Tell "no tmux session" apart from "cannot reach tmux", and stop logging "but attached"
       about sessions that do not exist
-- [ ] Log a skip once, not every tick — 53,623 of 53,687 journal lines are one repeated line
-- [ ] `needs_you` must not be dropped by `Store.list`'s 14-day gate, and the test must assert
+- [x] Log a skip once, not every tick — 53,623 of 53,687 journal lines are one repeated line
+- [x] `needs_you` must not be dropped by `Store.list`'s 14-day gate, and the test must assert
       it end to end rather than at the one layer that no longer has a cutoff
-- [ ] A test for `tmuxSession`: it parses the format string and owns the catch-all
+- [x] A test for `tmuxSession`: it parses the format string and owns the catch-all
 
 ## Tasks (round 1 rework)
-- [~] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
+- [x] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
       than the row's `status_since`, and skip a name another live row claims with a status
       other than `your_turn`
 - [x] Re-check the age threshold in `idleCandidates` instead of trusting the dashboard's filter
 - [x] `idleSessions` filters `dismissed = 0`, so Dismiss actually revokes the kill order
 - [x] Remove the `needs_you` cutoff from `rankNext`; fix the comment and the test that each
       assert something different from the code
-- [~] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxAttached`
+- [x] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxSession`
       — the first two are done. The third names a function this same diff renamed to
       `tmuxSession`, which still has no test. Ticked while false.
 - [x] Clamp `hours` to a sane floor and drop the duplicated `8` in `src/server.ts`
@@ -285,3 +285,20 @@ one, and never silently.
   Best minor, because it is the same shape one layer down: `Store.list` has a 14-day gate, so
   "however long it has waited" is still not literally true — and the test I added asserts exactly
   `24 * 14` hours, the boundary, passing only because it calls `rankNext` directly.
+- 2026-10-26 Round 2 rework built. The kill is bound to `#{session_path}` matching the row's
+  `cwd`, which is an identity the reporter does not control: retargeting a row by rewriting its
+  `branch` now also requires faking where the session lives. Re-ran round 2's own reproduction
+  against the new code, read-only, with the real 006 session as the target — the created-only
+  check still **passes** it (the defect), and the path bind **refuses** it.
+  The `busy` set is gone rather than repaired. It could not fire through the real endpoint, and
+  the case it was meant to catch — a second session inside an existing factory tmux session — is
+  covered by the path bind, which can. Removing a guard is not the same as fixing one, so: there
+  is now no rule in `idleCandidates` about other rows, and the comment says so.
+  Also: the `created` comparison refuses on `NaN` instead of proceeding (it was the one guard
+  on the path that failed open); `tmuxSession` distinguishes "no such session" from "cannot
+  reach tmux" and no longer reports the latter as attached; parsing moved into a pure
+  `parseTmuxSession` with tests, since it owns the format string and the catch-all; a skip is
+  logged when its reason changes and not every tick; `Store.list` no longer ages out
+  `needs_you`, with the test asserting it at 20 and 60 days through `list()` rather than through
+  the one layer that had no cutoff; and the endpoint's floor and default are separate numbers.
+  151 tests, typecheck clean.

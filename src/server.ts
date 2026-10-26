@@ -26,6 +26,9 @@ const ASSET_RE = /\.(js|css|webmanifest)$/;
 // The runner's own threshold lives in the runner; this is the smallest window the dashboard will
 // answer for at all.
 const MIN_IDLE_HOURS = 1;
+// A floor and a default are different numbers. Round 2 found the floor doing double duty, so a
+// caller that omitted `hours` silently got a 1-hour window where it used to get 8.
+const DEFAULT_IDLE_HOURS = 8;
 
 export interface Config {
   specsDir: string;
@@ -208,7 +211,7 @@ export function createApp(cfg: Config) {
   // It re-checks the age anyway before acting — this answer authorises destroying a process.
   app.get("/api/sessions/idle", requireBearer(cfg.runnerToken), (c) => {
     const raw = c.req.query("hours");
-    const hours = raw === undefined ? MIN_IDLE_HOURS : Number(raw);
+    const hours = raw === undefined ? DEFAULT_IDLE_HOURS : Number(raw);
     if (!Number.isFinite(hours) || hours < MIN_IDLE_HOURS)
       return c.json({ error: `hours must be a number >= ${MIN_IDLE_HOURS}` }, 400);
     return c.json({ sessions: cfg.store.idleSessions(hours) });

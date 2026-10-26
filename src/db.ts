@@ -192,11 +192,20 @@ export class Store {
       .all(before) as unknown as IdleSession[];
   }
 
-  // Everything not dismissed, plus anything touched in the last `days`.
+  // Everything not dismissed and touched in the last `days` — **except** a session blocked on
+  // a person, which is never aged out here.
+  //
+  // Round 2 of 015 found that `rankNext` had been fixed to let blocked work rank however long it
+  // had waited, while this gate quietly dropped it at 14 days — and the test added as proof
+  // asserted exactly 14 days, passing only because it called `rankNext` directly. A blocked
+  // session is the one kind the runner is forbidden to end, so the single row nothing can clean
+  // up was also the one the dashboard silently forgot.
   list(days = 14): Session[] {
     const since = new Date(Date.now() - days * 86400_000).toISOString();
     return this.db
-      .prepare("SELECT * FROM sessions WHERE dismissed = 0 AND updated_at >= ? ORDER BY updated_at DESC")
+      .prepare(
+        "SELECT * FROM sessions WHERE dismissed = 0 AND (updated_at >= ? OR status = 'needs_you') ORDER BY updated_at DESC",
+      )
       .all(since) as unknown as Session[];
   }
 
