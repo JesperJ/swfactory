@@ -1,6 +1,6 @@
 ---
 title: Finished sessions stop crowding Next
-status: reviewing
+status: building
 priority: P1
 summary: A session whose feature is done, or that finished long ago, drops out of Next instead of sitting there unactionable.
 ---
@@ -131,15 +131,31 @@ the dashboard to tell it which sessions those are, so `GET /api/jobs/running` is
 The guards are the part worth testing hardest: never a `needs_you` session, never an attached
 one, and never silently.
 
+## Tasks (round 2 rework)
+- [ ] Bind the kill to an identity the reporter does not control: `#{session_path}` must match
+      the row's `cwd`, so retargeting a row also requires faking where the session lives
+- [ ] Make the `busy` guard able to fire, or remove it — a ticked task must not describe a
+      branch that cannot execute through the real endpoint
+- [ ] The `created` comparison must refuse on `NaN` rather than proceed: it is the one guard
+      on this path that fails open
+- [ ] Tell "no tmux session" apart from "cannot reach tmux", and stop logging "but attached"
+      about sessions that do not exist
+- [ ] Log a skip once, not every tick — 53,623 of 53,687 journal lines are one repeated line
+- [ ] `needs_you` must not be dropped by `Store.list`'s 14-day gate, and the test must assert
+      it end to end rather than at the one layer that no longer has a cutoff
+- [ ] A test for `tmuxSession`: it parses the format string and owns the catch-all
+
 ## Tasks (round 1 rework)
-- [x] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
+- [~] Kill by identity, not by name: refuse a tmux session whose `#{session_created}` is newer
       than the row's `status_since`, and skip a name another live row claims with a status
       other than `your_turn`
 - [x] Re-check the age threshold in `idleCandidates` instead of trusting the dashboard's filter
 - [x] `idleSessions` filters `dismissed = 0`, so Dismiss actually revokes the kill order
 - [x] Remove the `needs_you` cutoff from `rankNext`; fix the comment and the test that each
       assert something different from the code
-- [x] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxAttached`
+- [~] Tests for the destructive path: `idleSessions`, `GET /api/sessions/idle`, `tmuxAttached`
+      — the first two are done. The third names a function this same diff renamed to
+      `tmuxSession`, which still has no test. Ticked while false.
 - [x] Clamp `hours` to a sane floor and drop the duplicated `8` in `src/server.ts`
 
 ## Tasks
@@ -243,3 +259,29 @@ one, and never silently.
   is eligible — identity, re-checked age, dismissed rows — so the behaviour proven here is a
   superset of what ships now. What has still never been observed is an end under the *new*
   guards; the first one will say so in the log, with the session id.
+- 2026-10-26 Reviewed, round 2: code 2 blocking / 9 minor, security 2 blocking / 6 minor,
+  UX 0 blocking / 6 minor. Findings in `reviews/015-round-2.md`. Two of round 1's three
+  blocking findings are genuinely fixed and were re-verified rather than taken on trust — the
+  `needs_you` fix in a browser at 40h, 49h, 60h and 13 days across eight configurations, and the
+  dismissed-row fix including its un-dismiss bypass, which self-defeats because any real status
+  change resets the clock. Production also answered round 1's open question: `SessionEnd` does
+  survive tmux's SIGHUP, so a killed row retires itself.
+  **Rework again.** One defect, two halves, both mine:
+  - **The `busy` guard is dead code.** `idleSessions` returns only `your_turn` rows; the
+    `busy` loop skips `your_turn` rows. The set is always empty and the branch cannot execute.
+    The test I wrote for it hands a `working` row straight to `idleCandidates` — input the
+    endpoint can never produce — so it passes while proving nothing. The task above ticked it.
+    This is the same failure as round 1's `needs_you` tick: a gate walked past by its author,
+    with a passing test as cover.
+  - **The identity check is one-directional.** It refuses a target created *after* the row went
+    idle and permits anything created *before* — and long-lived detached sessions are exactly
+    what this feature exists to kill, so the attack and the feature share a target class. Both
+    reviewers reproduced the retarget against the real 006 session read-only: a 20h-old row,
+    one hook POST rewriting `branch` while keeping the old clock, and the identity check
+    **passes**, because that tmux session was created two days before the row went idle. Only
+    the attach guard is in the way, and the runner starts everything detached.
+  The fix both reviewers proposed independently is better than mine: bind to `#{session_path}`
+  against the row's `cwd`, which a retargeting hook would also have to fake.
+  Best minor, because it is the same shape one layer down: `Store.list` has a 14-day gate, so
+  "however long it has waited" is still not literally true — and the test I added asserts exactly
+  `24 * 14` hours, the boundary, passing only because it calls `rankNext` directly.
