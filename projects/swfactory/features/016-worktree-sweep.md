@@ -1,6 +1,6 @@
 ---
 title: The sweep stops eating worktrees that were never used
-status: specced
+status: planned
 priority: P1
 summary: A worktree created by hand is deleted within seconds, because an empty branch and a merged branch look identical to the sweep.
 ---
@@ -77,3 +77,46 @@ These are the calls I made. Each is a decision to overturn, not a question to an
 - **Both guards, not one.** The tip check alone fixes the reported bug. The grace period alone
   would too, for thirty minutes. Keeping both means a mistake in either still leaves the other,
   which is the lesson 015 paid for twice.
+
+## Plan
+One function changes: `pruneWorktree` in `scripts/runner.ts`. Nothing else in the runner, the
+dashboard or the UI is touched, and the sweep keeps running every tick.
+
+Two guards go in ahead of the existing `--no-merged` check, both failing toward keeping the tree:
+
+1. **Tip equality.** `git rev-parse <branch>` against `git rev-parse <base>`. Equal means the
+   branch holds no commit of its own, so nothing about it has landed — it has not started. This
+   is the reported bug exactly, and it is decided without a clock.
+2. **A grace period.** `WORKTREE_GRACE_MINUTES` (30), measured from the later of the worktree
+   directory's `birthtime` and `mtime`, because `birthtime` reads as the epoch on filesystems
+   that do not record it and the later of the two fails safe.
+
+The age check is extracted as `worktreeAge`, pure but for one `statSync`, so the boundary can be
+tested without waiting thirty minutes.
+
+Chosen over the alternative — marking trees the runner created and only sweeping those — because
+a marker is state that has to stay in sync with the filesystem, and gets stale exactly when the
+runner crashes, which is when a stray tree is most likely to exist. The two checks here need
+nothing persisted.
+
+**Which test proves what**: every criterion gets a case in `test/runner.test.ts` against real
+`git init` repositories, which is how the existing worktree tests already work — no mocks, since
+the bug lives in what git actually prints. The grace period is proven by backdating a directory's
+mtime rather than by sleeping.
+
+**Risk**: the tip check keeps a fast-forward-merged branch's tree forever, because such a branch
+ends up at the base tip and is indistinguishable from a new one. Merges here are `--no-ff`, so it
+does not arise in practice, and the failure direction is a tree that survives rather than work
+that vanishes. Recorded rather than guarded.
+
+## Tasks
+- [ ] `worktreeAge` returning minutes from the later of birthtime and mtime, with a test
+- [ ] `pruneWorktree` keeps a tree whose branch tip equals the base tip, with a test
+- [ ] `pruneWorktree` keeps a tree younger than the grace period, with a test that backdates
+- [ ] A test proving a genuinely merged feature branch is still collected, so 013 survives
+- [ ] Verified for real: make a worktree by hand with the runner running and watch it live
+
+## Log
+- 2026-10-26 Specced and planned together: the diagnosis was already in hand from reproducing it
+  in a throwaway repo, where `git branch --no-merged main --list feature/brand-new` printed
+  nothing and both tips read `9e9b58ef`. 5 tasks.
