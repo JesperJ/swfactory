@@ -75,8 +75,8 @@ not to remove the last decision. Merging stays mine, with the findings already a
 - [x] Reviewers run in parallel and write findings to a per-round file, kept in git
 - [x] Each finding names the acceptance criterion or file it concerns, not a general opinion
 - [x] The approver passes, reworks, or escalates, and records which and why in the spec's Log
-- [ ] Rework is capped at two rounds, then escalates
-- [ ] An escalation reaches me as one specific question, never as a list of findings
+- [x] Rework is capped at two rounds, then escalates
+- [x] An escalation reaches me as one specific question, never as a list of findings
 - [x] Nothing merges to main automatically
 - [ ] `/factory status` proposes a diff for stale specs — ticked-but-open, done-but-building,
       blocked-but-planned — and applies only what I accept
@@ -227,3 +227,18 @@ the thing that actually drifted.
     complete specs sitting on unmerged feature branches while the dashboard still calls them
     `idea` — they ran before the `$FACTORY_HOME` rule landed, so their specs went where nothing
     reads them. The rule is right; these two predate it and need collecting by hand.
+- 2026-10-26 Round 2 → escalate. Code 0 blocking, security 0 blocking, UX 1 blocking and
+  2 minor, in `reviews/011-round-2.md`. Two criteria closed on evidence both the code and the
+  UX reviewer found independently: 015 ran round 1 → rework, round 2 → rework, round 3 →
+  escalate, which is the two-round cap working, and its round-3 escalation was one question
+  with two named options rather than a findings dump. Five features' Log entries show the same
+  shape. Those were the two criteria no review round could settle by reading, and use settled
+  them.
+  Escalating rather than reworking, because neither thing left is clear and local. The UX
+  blocking finding is that a feature sitting on an unanswered escalation renders in Next
+  identically to one never reviewed — same `reason`, same "Review it" button, which queues a
+  fresh three-agent round on unchanged code — and the half of it that is a missing session URL
+  is 009's root cause, not 011's. Whether 011 owns the rest is a scope call. And the last
+  criterion, `/factory status` proposing a stale-spec diff, has never been run once: no
+  `factory: status` commit exists anywhere. That one closes by use, not by code, so a rework
+  round could only re-read the same prompt text.
