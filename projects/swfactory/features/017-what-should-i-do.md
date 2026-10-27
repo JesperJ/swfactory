@@ -1,6 +1,6 @@
 ---
 title: Every row says where it stands, what you could do, and what I'd do
-status: building
+status: reviewing
 priority: P1
 summary: The board offers one button per feature and no idea why. It should show the options a feature actually has, mark one as recommended, and be willing to say "this is waiting on you".
 repo: https://github.com/JesperJ/swfactory
@@ -78,26 +78,26 @@ A row with a running job says what is running and for how long, and offers the w
 must not continue to claim "built, waiting on review" while a review is running.
 
 ## Acceptance criteria
-- [ ] `specs.ts` exposes, per feature: review rounds with dates, criteria ticked/total, branch
+- [x] `specs.ts` exposes, per feature: review rounds with dates, criteria ticked/total, branch
       existence, merged state, and `question:`
-- [ ] A malformed, missing or unreadable one of those yields a null and never an error, and a
+- [x] A malformed, missing or unreadable one of those yields a null and never an error, and a
       feature with none of them renders exactly as it does today
-- [ ] `featureOptions` returns the available moves for a feature, with exactly one recommended
+- [x] `featureOptions` returns the available moves for a feature, with exactly one recommended
       and a reason for it
-- [ ] The rules live in `src/next.ts` with tests, not in the view — no second copy in `app.js`
-- [ ] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
+- [x] The rules live in `src/next.ts` with tests, not in the view — no second copy in `app.js`
+- [x] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
       and its row shows the question
-- [ ] A feature whose newest round predates its newest build does not recommend "Mark done"
-- [ ] A feature with unticked criteria does not recommend "Mark done", and the row says how many
-- [ ] A feature with a merged PR and a stale round recommends reviewing, not building
-- [ ] A row for a feature with an open PR links to it; a merged one says so
-- [ ] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
-- [ ] A row with a running job says what is running and since when, and never simultaneously
+- [x] A feature whose newest round predates its newest build does not recommend "Mark done"
+- [x] A feature with unticked criteria does not recommend "Mark done", and the row says how many
+- [x] A feature with a merged PR and a stale round recommends reviewing, not building
+- [x] A row for a feature with an open PR links to it; a merged one says so
+- [x] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
+- [x] A row with a running job says what is running and since when, and never simultaneously
       claims the work is waiting to start
-- [ ] A local session is reachable from its row by the `tmux attach` command that opens it
-- [ ] Verified at 390px and 1280px, light and dark, that the state line and options are legible
+- [x] A local session is reachable from its row by the `tmux attach` command that opens it
+- [x] Verified at 390px and 1280px, light and dark, that the state line and options are legible
       and do not push the table past one screen of rows
-- [ ] `approve` writes `question:` on escalate and clears it on pass and rework
+- [x] `approve` writes `question:` on escalate and clears it on pass and rework
 
 ## Out of scope
 - Answering a question from the dashboard. Reading it is the gap; a reply box is a bigger
@@ -194,7 +194,7 @@ options must wrap, which 012's overflow sweep will catch.
 - [x] `factory.md`: `approve` writes `question:` on escalate and clears it on pass and rework
 - [x] The runner reports branch and merged state; the dashboard stores it and renders unknown as
       nothing
-- [ ] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
+- [x] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
       scans
 
 ## Log
@@ -214,3 +214,24 @@ options must wrap, which 012's overflow sweep will catch.
   rules out mounting `.git` into a web-reachable process. Merge state now comes from the runner,
   last in the order, so everything before it ships without it.
 - 2026-10-27 Building on `feature/017-what-should-i-do`.
+- 2026-10-27 Built, 12 tasks. 177 tests, typecheck clean, no overflow at 15 widths.
+  Three measurements drove the layout rather than taste, and each corrected a guess. Options
+  stacking made a plain row **129px** against the 51px it had been, which breaks the density
+  012's criterion protects. A facts line of its own cost another 16px, so the facts moved into
+  the Why column, where "why is this row here" already lives. And under `table-layout: fixed`
+  the action cell rendered on top of the Why column, so the table shows the recommended move
+  plus the pull request while the stacked layout shows every option and labels the suggested
+  one. Rows are back to 51px.
+  Two of my own checks were wrong before the third was right: comparing control edges against
+  the neighbouring cell's border box counted padding as a collision, and a Range over the Why
+  text measures where text *would* end rather than where it is painted, since the cell
+  ellipsises. The check that holds compares against the content box, and passes at 1100, 1280,
+  1366 and 1920.
+  Verified in a browser rather than by unit test alone: an escalated feature renders **Answer**
+  with the question as its reason and queues nothing; a running job says "Plan running. started
+  7m ago" and offers `tmux attach`, where the row previously showed a dead pill beside a Why
+  column still claiming the work had not begun; a blocked feature offers Unblock and no agent.
+  The runner's report was driven end to end against this repo: 8 branches read correctly, 007
+  and 017 open and the rest merged, and rows with a PR in their Log then read "PR merged".
+  The endpoint test caught `machineRoute` not actually having been updated, which would have
+  left the route behind UI auth and silently 401ed the runner every tick.
