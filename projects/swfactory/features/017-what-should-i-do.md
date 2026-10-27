@@ -175,11 +175,11 @@ truth. Third, the row is already dense at 390px, so the state line must be one l
 options must wrap, which 012's overflow sweep will catch.
 
 ## Tasks
-- [ ] `specs.ts`: parse acceptance criteria into `{ticked, total}` and `question:` from
+- [x] `specs.ts`: parse acceptance criteria into `{ticked, total}` and `question:` from
       frontmatter, both from data already read; malformed input yields nulls, never a throw
-- [ ] `specs.ts`: collect `reviews/<NNN>-round-<n>.md` per project and attach rounds with their
+- [x] `specs.ts`: collect `reviews/<NNN>-round-<n>.md` per project and attach rounds with their
       dates to each feature
-- [ ] `specs.ts`: extract the newest PR link from the spec's Log
+- [x] `specs.ts`: extract the newest PR link from the spec's Log
 - [ ] `next.ts`: `featureOptions` replacing `featureAction` — a list, one recommended, with a
       reason; every existing `next` test still passes
 - [ ] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an

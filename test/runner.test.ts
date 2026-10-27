@@ -331,8 +331,8 @@ test("the sweep never collects the detached base tree", () => {
 // before anything else about this path.
 
 const idleFeatures: Feature[] = [
-  { id: "006", slug: "006-ntfy", title: "ntfy", status: "done", priority: null, summary: null, blocked: null, lastLog: null, file: "006-ntfy.md" },
-  { id: "015", slug: "015-finished-sessions", title: "x", status: "building", priority: null, summary: null, blocked: null, lastLog: null, file: "015.md" },
+  { id: "006", slug: "006-ntfy", title: "ntfy", status: "done", priority: null, summary: null, blocked: null, lastLog: null, criteria: { ticked: 0, total: 0 }, rounds: [], prUrl: null, question: null, vcs: null, file: "006-ntfy.md" },
+  { id: "015", slug: "015-finished-sessions", title: "x", status: "building", priority: null, summary: null, blocked: null, lastLog: null, criteria: { ticked: 0, total: 0 }, rounds: [], prUrl: null, question: null, vcs: null, file: "015.md" },
 ];
 const idleProjects: Project[] = [
   { slug: "swfactory", name: "swfactory", status: "active", summary: null, repo: "github.com/jesper/swfactory", repoUrl: null, features: idleFeatures, file: "" },

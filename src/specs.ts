@@ -11,6 +11,28 @@ import { marked } from "marked";
 
 export const FEATURE_STATUSES = ["idea", "specced", "planned", "building", "reviewing", "done"] as const;
 
+// How far the acceptance criteria have been ticked. The dashboard could never see this, so a
+// feature with three unticked criteria looked exactly like a finished one.
+export interface Criteria {
+  ticked: number;
+  total: number;
+}
+
+// A review round that exists on disk, newest last.
+export interface Round {
+  n: number;
+  date: string | null; // "Date:" line inside the round file, when it has one
+}
+
+// What version control knows, as reported by the runner — the dashboard has no repository of
+// its own to ask. Absent means nobody has told us, which the view must render as nothing rather
+// than as a guess. See decisions/2026-10-27-vcs-facts-come-from-the-runner.md.
+export interface Vcs {
+  branch: string | null;
+  exists: boolean;
+  merged: boolean;
+}
+
 export interface Feature {
   id: string; // "003"
   slug: string; // "003-login"
@@ -20,6 +42,11 @@ export interface Feature {
   summary: string | null;
   blocked: string | null; // frontmatter `blocked:` — why this can't move right now
   lastLog: string | null; // newest "- YYYY-MM-DD" date under ## Log, for spotting stalls
+  criteria: Criteria;
+  rounds: Round[];
+  prUrl: string | null; // newest pull request link found in the Log
+  question: string | null; // frontmatter `question:` — an escalation waiting on a person
+  vcs: Vcs | null; // reported by the runner; null until it has been
   file: string;
 }
 
@@ -72,6 +99,45 @@ export function lastLogDate(body: string): string | null {
   return dates?.length ? dates.sort().at(-1)! : null;
 }
 
+// Ticked and total acceptance criteria. Only the checkboxes under "## Acceptance criteria" are
+// counted: Tasks are checkboxes too, and conflating them would make a feature look finished
+// because its *work* was done rather than because its criteria were met — which is the exact
+// confusion this feature exists to remove.
+export function countCriteria(body: string): Criteria {
+  const section = body.split(/^##\s+Acceptance criteria\s*$/im)[1];
+  if (!section) return { ticked: 0, total: 0 };
+  const upToNextHeading = section.split(/^##\s+/m)[0];
+  const boxes = upToNextHeading.match(/^\s*-\s+\[([ xX~])\]/gm) ?? [];
+  const ticked = boxes.filter((b) => /\[[xX]\]/.test(b)).length;
+  return { ticked, total: boxes.length };
+}
+
+// The newest pull request link in the Log. `build` writes one there, which is why this needs no
+// repository and no network — the Log is a file the dashboard already reads.
+export function prUrlFrom(body: string): string | null {
+  const links = body.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g);
+  return links?.length ? links[links.length - 1] : null;
+}
+
+// Review rounds for one feature id, from `<project>/reviews/<NNN>-round-<n>.md`.
+export function loadRounds(reviewsDir: string, id: string): Round[] {
+  if (!existsSync(reviewsDir)) return [];
+  const rounds: Round[] = [];
+  for (const name of readdirSync(reviewsDir).sort()) {
+    const m = name.match(/^(\d+)-round-(\d+)\.md$/);
+    if (!m || m[1] !== id) continue;
+    let date: string | null = null;
+    try {
+      // "Date: 2026-10-24" near the top. A round file without one still counts as a round.
+      date = readFileSync(join(reviewsDir, name), "utf8").match(/^Date:\s*(\d{4}-\d{2}-\d{2})/m)?.[1] ?? null;
+    } catch {
+      date = null;
+    }
+    rounds.push({ n: Number(m[2]), date });
+  }
+  return rounds.sort((a, b) => a.n - b.n);
+}
+
 export function loadProjects(specsDir: string): Project[] {
   if (!existsSync(specsDir)) return [];
   const projects: Project[] = [];
@@ -87,22 +153,32 @@ export function loadProjects(specsDir: string): Project[] {
       summary: str(data.summary),
       repo: normalizeRepo(str(data.repo)),
       repoUrl: str(data.repo),
-      features: loadFeatures(join(dir, "features")),
+      features: loadFeatures(join(dir, "features"), join(dir, "reviews")),
       file: join(slug, "project.md"),
     });
   }
   return projects;
 }
 
-function loadFeatures(dir: string): Feature[] {
+function loadFeatures(dir: string, reviewsDir: string): Feature[] {
   if (!existsSync(dir)) return [];
   const features: Feature[] = [];
   for (const name of readdirSync(dir).sort()) {
     if (!name.endsWith(".md")) continue;
     const slug = name.slice(0, -3);
-    const { data, body } = readMd(join(dir, name));
+    // A spec someone is halfway through editing must not take the dashboard down: this runs on
+    // every /api/state. Anything unreadable yields a feature with no extra facts rather than an
+    // exception, which is the same failure direction the rest of this file already takes.
+    let data: Record<string, unknown> = {};
+    let body = "";
+    try {
+      ({ data, body } = readMd(join(dir, name)));
+    } catch {
+      continue;
+    }
+    const id = slug.match(/^(\d+)/)?.[1] ?? slug;
     features.push({
-      id: slug.match(/^(\d+)/)?.[1] ?? slug,
+      id,
       slug,
       title: str(data.title) ?? firstHeading(body) ?? slug,
       status: str(data.status) ?? "idea",
@@ -110,6 +186,11 @@ function loadFeatures(dir: string): Feature[] {
       summary: str(data.summary),
       blocked: str(data.blocked),
       lastLog: lastLogDate(body),
+      criteria: countCriteria(body),
+      rounds: loadRounds(reviewsDir, id),
+      prUrl: prUrlFrom(body),
+      question: str(data.question),
+      vcs: null, // filled in from what the runner has reported, if anything
       file: name,
     });
   }

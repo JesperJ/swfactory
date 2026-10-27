@@ -16,6 +16,11 @@ function feature(over: Partial<Feature> & { slug: string }): Feature {
     summary: null,
     blocked: null,
     lastLog: null,
+    criteria: { ticked: 0, total: 0 },
+    rounds: [],
+    prUrl: null,
+    question: null,
+    vcs: null,
     file: `${over.slug}.md`,
     ...over,
   };
