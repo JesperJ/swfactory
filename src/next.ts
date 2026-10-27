@@ -72,6 +72,10 @@ export interface NextItem {
   reason: string; // why it ranks here
   blocked: boolean;
   score: number;
+  // Everything the row needs to say more than "Review it". Empty for a session, which has no
+  // criteria, no rounds and no pull request of its own.
+  options: FeatureOption[];
+  facts: string[];
 }
 
 // P1 sorts before P2 before unprioritised, without letting priority outrank urgency.
@@ -134,6 +138,8 @@ export function rankNext(projects: Project[], sessions: LinkedSession[], now = n
       url: s.url,
       reason: s.status === "needs_you" ? "a session is blocked on you" : "a session finished and wants a look",
       blocked: false,
+      options: [],
+      facts: [],
       score: s.status === "needs_you" ? 0 : 1,
     });
   }
@@ -296,7 +302,8 @@ export function lifecycleCounts(projects: Project[]): LifecycleStage[] {
 }
 
 function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
-  const a = featureAction(f, now);
+  const options = featureOptions(f, now);
+  const a = options.find((o) => o.recommended);
   if (!a) return null;
   return {
     kind: a.kind,
@@ -304,6 +311,8 @@ function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
     command: a.command,
     reason: a.reason,
     score: a.score,
+    options,
+    facts: featureFacts(f),
     title: f.title,
     project: p.name,
     projectSlug: p.slug,

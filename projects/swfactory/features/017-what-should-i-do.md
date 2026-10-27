@@ -184,13 +184,13 @@ options must wrap, which 012's overflow sweep will catch.
       reason; every existing `next` test still passes
 - [x] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
       unanswered question offering no agent action
-- [ ] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
+- [x] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
       no second copy of these rules exists
-- [ ] `app.js`: the Next row renders the state line and the options, recommended one marked,
+- [x] `app.js`: the Next row renders the state line and the options, recommended one marked,
       with a PR link where there is one
-- [ ] `app.js`: a row with a running job says what is running and since when, offers
+- [x] `app.js`: a row with a running job says what is running and since when, offers
       `tmux attach`, and stops claiming the work is waiting to start
-- [ ] `app.js`: a blocked feature offers unblocking rather than an empty cell
+- [x] `app.js`: a blocked feature offers unblocking rather than an empty cell
 - [ ] `factory.md`: `approve` writes `question:` on escalate and clears it on pass and rework
 - [ ] The runner reports branch and merged state; the dashboard stores it and renders unknown as
       nothing

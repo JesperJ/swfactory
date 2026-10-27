@@ -8,7 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, isJobCommand, JOB_COMMANDS } from "./db.ts";
 import { parseHook } from "./hooks.ts";
 import { linkSession } from "./match.ts";
-import { featureAction, lifecycleCounts, rankNext } from "./next.ts";
+import { featureAction, featureFacts, featureOptions, lifecycleCounts, rankNext } from "./next.ts";
 import { loadProjects, renderDoc } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
@@ -153,7 +153,9 @@ export function createApp(cfg: Config) {
     // re-deriving the rules. One mapping, server-side; the UI is told, not left to work it out.
     const annotated = projects.map((p) => ({
       ...p,
-      features: p.features.map((f) => ({ ...f, next: featureAction(f) })),
+      // `options` is what the view renders; `next` stays as the recommended one so nothing that
+      // reads it has to change at once. 005: the rules live here, never in a second copy.
+      features: p.features.map((f) => ({ ...f, next: featureAction(f), options: featureOptions(f), facts: featureFacts(f) })),
     }));
     return c.json({
       projects: annotated,

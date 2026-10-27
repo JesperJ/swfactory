@@ -577,3 +577,76 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
     bottom: auto;
   }
 }
+
+/* --- 017: a row offers options, not one button ------------------------------------------- */
+
+/* Facts, not a verdict: "2 rounds · 1 of 14 criteria unticked". Secondary to the title, and
+   one line — the table exists to be scanned and a row that grows breaks the scan. */
+/* Appended to the Why column rather than given a line of its own: a second line cost 16px on
+   every row, which pushed a plain row past the 60px 012's density criterion protects. */
+.c-facts { color: var(--text-3); opacity: 0.85; }
+.c-facts::before { content: " · "; }
+@media (max-width: 1099px) {
+  /* Stacked, the Why column has room, so the facts read as their own line. */
+  .c-facts { display: block; margin-top: 2px; font-size: 12px; }
+  .c-facts::before { content: none; }
+}
+
+/* The options themselves. They wrap on a phone, where the action cell is a row of its own, and
+   stay on one line at table widths. */
+.opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
+.opts .btn { flex: none; }
+
+/* In the table the options must stay on one line. Three controls stacking made a plain row
+   129px against the 51px it had been, which breaks the scan 012's density criterion protects —
+   the table exists to be compared down a column, and a row that grows defeats that. Secondary
+   options therefore shrink to text while the recommended one stays a real button. */
+@media (min-width: 1100px) {
+  .opts { flex-wrap: nowrap; justify-content: flex-end; min-width: 0; }
+  /* The table is for scanning and comparing; the sheet is for acting on one thing. Three
+     variable-width controls do not fit a 51px row — under `table-layout: fixed` they rendered
+     on top of the Why column — so here a row shows the recommended move and the pull request,
+     and the alternatives appear in the stacked layout below and in the feature sheet, both of
+     which have the room. Nothing is removed from the DOM, so nothing has to be re-derived. */
+  /* Wide enough for a recommendation plus a pull request link, and clipped so that a longer
+     label can never again render on top of the Why column. */
+  .nexttable .c-action { width: 17em; overflow: hidden; }
+  .nexttable .c-action .opts .btn:not(.primary) { display: none; }
+  .nexttable .c-action .opts .btn.link { display: inline-flex; }
+  .nexttable .c-action .opts .opt-you:not(.rec) { display: none; }
+  .opts .btn:not(.primary) {
+    min-height: 28px; padding: 0 8px; font-size: 12px;
+    background: none; border-color: transparent; color: var(--text-2);
+  }
+  .opts .btn:not(.primary):hover { border-color: var(--border); color: var(--text); }
+  .opts .opt-you { padding: 4px 8px; font-size: 12px; }
+  .opts .attach { max-width: 13em; }
+}
+
+/* An option no agent can perform. Deliberately not a button: there is nothing to press, and a
+   button that does nothing is how a board teaches you to distrust it. */
+.opt-you {
+  font-size: 13px; color: var(--text-2);
+  padding: 6px 10px; border: 1px dashed var(--border); border-radius: 10px;
+  white-space: nowrap;
+}
+.opt-you.rec { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+/* The command that opens a local session. Selectable, because its whole purpose is to be
+   copied — a phone cannot run it, but a desktop terminal is one paste away. */
+.attach {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--text-2);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 8px; user-select: all; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.opts.running { gap: 6px; }
+
+@media (max-width: 1099px) {
+  /* Below the table breakpoint the action cell is full width, so options read left to right —
+     and there is room to say outright which one is suggested rather than leaving it to styling.
+     That is the question this feature exists to answer. */
+  .opts { justify-content: flex-start; }
+  .opts .rec::after { content: " · suggested"; font-weight: 500; opacity: 0.75; }
+}

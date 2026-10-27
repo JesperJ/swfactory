@@ -154,6 +154,46 @@ function empty(title, body) {
 // `command`. Round 1 found a second copy here that disagreed with it, so "Review it" queued a
 // build. The UI is now told what a tap means rather than working it out.
 
+// What a row offers. `startControl` answers "what one command can I queue"; this answers "what
+// could I do here", which is the question 017 exists for. A link is rendered as a link, an
+// option no agent can perform is rendered as text rather than a button, and the recommended
+// one is marked — because a single button has to be right every time or it teaches you to
+// distrust it, and 011's did not.
+function optionControls(item) {
+  const opts = item.options ?? [];
+  if (!opts.length) return startControl(item, { withReason: false });
+
+  const job = item.feature ? jobFor(item.projectSlug, item.feature) : null;
+  // Work in flight owns the cell: the old row showed a dead "Started" pill while the Why
+  // column still read "built, waiting on review", contradicting itself about its own state.
+  if (job && job.status !== "done" && !job.stale && job.status !== "failed") return runningControl(item, job);
+
+  const parts = opts.map((o) => {
+    if (o.kind === "link" && o.href)
+      return `<a class="btn link" href="${esc(o.href)}" target="_blank" rel="noopener">${esc(o.action)} ${icons.open}</a>`;
+    if (!o.command)
+      // No agent can do this one. Saying so is the point: the dashboard must not sell a way to
+      // avoid a decision that is yours.
+      return `<span class="opt-you${o.recommended ? " rec" : ""}" title="no agent can do this one — it is yours">${esc(o.action)}</span>`;
+    return `<button class="btn${o.recommended ? " primary rec" : ""}" data-start="${esc(item.projectSlug)}/${esc(item.feature)}/${esc(o.command)}">${esc(o.action)}</button>`;
+  });
+  // A failed or abandoned job still needs its retry affordance, which startControl owns.
+  if (job?.stale || job?.status === "failed") parts.unshift(startControl(item, { withReason: false }));
+  return `<div class="opts">${parts.join("")}</div>`;
+}
+
+// A job that is actually running says what it is doing and since when, and offers the way to
+// look at it. Local sessions have no URL — the tmux name is what the runner built from the
+// project and feature, so the row can hand you the command that opens it.
+function runningControl(item, job) {
+  const name = `factory-${item.projectSlug}-${item.feature}`.replace(/[^\w.-]/g, "-");
+  const since = job.claimed_at ?? job.created_at;
+  return `<div class="opts running">
+    <span class="pill working">${esc(JOB_LABEL[job.status] ?? job.status)}${since ? ` ${esc(ago(since))}` : ""}</span>
+    <code class="attach" title="attach to this session">tmux attach -t ${esc(name)}</code>
+  </div>`;
+}
+
 function jobFor(projectSlug, featureSlug) {
   return (state.jobs ?? []).find((j) => j.project === projectSlug && j.feature === featureSlug);
 }
@@ -250,13 +290,19 @@ function renderNext() {
   // One row markup for both layouts. Which one shows is a media query's decision, so the two
   // can never disagree about the viewport the way two JS branches could.
   const row = (i) => {
-    const control = startControl(i, { withReason: false });
+    const control = optionControls(i);
     // A failed job replaces the ranking reason: why it is not moving beats why it ranked here.
     const job = i.feature ? jobFor(i.projectSlug, i.feature) : null;
+    const running = job && job.status !== "done" && !job.stale && job.status !== "failed";
     const why =
       job?.status === "failed"
         ? `<b class="failed">Failed.</b> ${esc(job.error ?? "no reason given")}`
-        : esc(i.reason);
+        : running
+          // Not "built, waiting on review" while a review is running. The row used to claim the
+          // work had not started while the pill beside it said it had.
+          ? `<b class="failed">${esc(i.action)} running.</b> started ${esc(ago(job.claimed_at ?? job.created_at))} ago`
+          : esc(i.reason);
+    const facts = i.facts?.length ? `<span class="c-facts">${esc(i.facts.join(" · "))}</span>` : "";
     // Every session row gets a control. Local sessions have no URL, and before this they
     // rendered with nothing at all — unactionable rows in a view built for acting.
     const open = i.sessionId
@@ -274,7 +320,7 @@ function renderNext() {
       </td>
       <td class="c-prio">${i.priority ? `<span class="prio p-${esc(i.priority)}">${esc(i.priority)}</span>` : ""}</td>
       <td class="c-status">${i.status ? `<span class="fstatus"><span class="status-dot ${statusClass(i.status)}"></span>${esc(i.status)}</span>` : ""}</td>
-      <td class="c-why" title="${job?.status === "failed" ? esc(job.error ?? "") : esc(i.reason)}">${why}</td>
+      <td class="c-why" title="${esc([job?.status === "failed" ? job.error ?? "" : i.reason, ...(i.facts ?? [])].filter(Boolean).join(" · "))}">${why}${facts}</td>
       <td class="c-action">${open}${control}</td>
     </tr>`;
   };
