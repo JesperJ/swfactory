@@ -159,8 +159,8 @@ function empty(title, body) {
 // option no agent can perform is rendered as text rather than a button, and the recommended
 // one is marked — because a single button has to be right every time or it teaches you to
 // distrust it, and 011's did not.
-function optionControls(item) {
-  const opts = item.options ?? [];
+function optionControls(item, { links = true } = {}) {
+  const opts = (item.options ?? []).filter((o) => links || o.kind !== "link");
   if (!opts.length) return startControl(item, { withReason: false });
 
   const job = item.feature ? jobFor(item.projectSlug, item.feature) : null;
@@ -185,13 +185,34 @@ function optionControls(item) {
 // A job that is actually running says what it is doing and since when, and offers the way to
 // look at it. Local sessions have no URL — the tmux name is what the runner built from the
 // project and feature, so the row can hand you the command that opens it.
+// A queued job gets no `tmux attach`: no runner has claimed it, so there is no session of that
+// name yet and the command would fail. An affordance that cannot work is the same defect as a
+// row that lies about its own state, one step smaller.
 function runningControl(item, job) {
   const name = `factory-${item.projectSlug}-${item.feature}`.replace(/[^\w.-]/g, "-");
   const since = job.claimed_at ?? job.created_at;
+  const attach =
+    job.status === "queued"
+      ? ""
+      : `<code class="attach" title="attach to this session">tmux attach -t ${esc(name)}</code>`;
   return `<div class="opts running">
     <span class="pill working">${esc(JOB_LABEL[job.status] ?? job.status)}${since ? ` ${esc(ago(since))}` : ""}</span>
-    <code class="attach" title="attach to this session">tmux attach -t ${esc(name)}</code>
+    ${attach}
   </div>`;
+}
+
+// What a job in flight is actually doing, for the Why column. Round 1 of 017 found "Review
+// running. started 39m ago" printed beside a "Queued 39m" pill, because every status that was
+// not done, stale or failed was called running — the row contradicting itself about its own
+// state, which is the defect this feature exists to remove, one job-status earlier than where
+// 015 found it. Queued means no runner has claimed it; only `running` has started.
+function jobPhase(action, job) {
+  const since = job.claimed_at ?? job.created_at;
+  const when = since ? ` ${esc(ago(since))} ago` : "";
+  if (job.status === "queued")
+    return `<b class="inflight">${esc(action)} queued.</b> waiting for a runner${since ? ` for ${esc(ago(since))}` : ""}`;
+  if (job.status === "claimed") return `<b class="inflight">${esc(action)} starting.</b> a runner picked it up${when}`;
+  return `<b class="inflight">${esc(action)} running.</b> started${when}`;
 }
 
 function jobFor(projectSlug, featureSlug) {
@@ -240,10 +261,21 @@ function startControl(item, { primary = false, withReason = true } = {}) {
 
 // A feature anywhere in the UI, turned into something startControl understands. `next` is
 // attached by the server; a done feature has none.
-function featureItem(projectSlug, feature) {
-  return feature?.next
-    ? { ...feature.next, projectSlug, feature: feature.slug, blocked: !!feature.blocked }
-    : null;
+// The same thing with the whole options list attached, for the views that render options rather
+// than one button. Round 1 of 017 found Projects and the feature sheet still on `startControl`,
+// which renders nothing when the recommended move has no command — so "Mark done", "Answer" and
+// a blocked feature all showed an empty cell there, which is the complaint this feature opens
+// with, one view over. The options come from the server either way; nothing is re-derived here.
+function featureOptionItem(projectSlug, feature) {
+  if (!feature) return null;
+  return {
+    ...(feature.next ?? { kind: null, action: "", command: null, reason: "" }),
+    projectSlug,
+    feature: feature.slug,
+    blocked: !!feature.blocked,
+    options: feature.options ?? [],
+    facts: feature.facts ?? [],
+  };
 }
 
 // One recommendation, a few alternatives. Everything here is a thing you could start now.
@@ -298,9 +330,9 @@ function renderNext() {
       job?.status === "failed"
         ? `<b class="failed">Failed.</b> ${esc(job.error ?? "no reason given")}`
         : running
-          // Not "built, waiting on review" while a review is running. The row used to claim the
-          // work had not started while the pill beside it said it had.
-          ? `<b class="failed">${esc(i.action)} running.</b> started ${esc(ago(job.claimed_at ?? job.created_at))} ago`
+          // Not "built, waiting on review" while a review is running, and not "running" while
+          // the pill beside it says "Queued" — the row agrees with itself about its own phase.
+          ? jobPhase(i.action, job)
           : esc(i.reason);
     const facts = i.facts?.length ? `<span class="c-facts">${esc(i.facts.join(" · "))}</span>` : "";
     // Every session row gets a control. Local sessions have no URL, and before this they
@@ -385,7 +417,7 @@ function progressBar(features) {
 function featureRow(p, f) {
   const live = featureSession(p.slug, f.slug);
   // Someone navigating by project should be able to start work there too, not only from Next.
-  const control = live ? "" : startControl(featureItem(p.slug, f));
+  const control = live ? "" : optionControls(featureOptionItem(p.slug, f), { links: false });
   return `<li class="featurerow"><button class="feature ${f.status === "done" ? "done" : ""}" data-doc="${esc(p.slug)}/${esc(f.slug)}">
     <span class="status-dot ${statusClass(f.status)}" title="${esc(f.status)}"></span>
     <span class="ftitle"><span class="fid">${esc(f.id)}</span> ${esc(f.title)}</span>
@@ -513,7 +545,7 @@ async function syncSheet(r) {
     : "";
   // The sheet is where you land from anywhere, so it must offer the same action — and show a
   // failed job rather than looking as though nothing was ever attempted.
-  const control = f && !related.some((s) => s.status === "working") ? startControl(featureItem(r.doc.project, f), { primary: true }) : "";
+  const control = f && !related.some((s) => s.status === "working") ? optionControls(featureOptionItem(r.doc.project, f)) : "";
   const controlHtml = control ? `<div class="sheet-action">${control}</div>` : "";
 
   if (key !== sheetKey) {

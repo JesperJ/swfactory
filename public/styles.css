@@ -423,11 +423,20 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .dot.k-build { background: var(--st-planned); }
 .dot.k-plan { background: var(--st-specced); }
 .dot.k-spec { background: var(--st-idea); }
+/* 017 added kinds no agent can perform. Without a colour their dot renders as nothing, so the
+   one verb a row is most likely to carry — "Answer" — was the only one with no mark beside it. */
+.dot.k-escalated { background: var(--needs); }
+.dot.k-finish { background: var(--st-done); }
+.dot.k-unblock { background: var(--text-3); }
 .rowaction {
   display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   padding: 0 14px 12px; margin-top: -4px;
 }
 .rowaction .btn { min-height: 44px; padding: 0 14px; font-size: 14px; }
+/* The list row keeps its controls on the right even where the stacked Next card puts them on
+   the left: in a list they line up down a column, and two options left-aligned under a
+   right-aligned one read as two different rows. */
+.rowaction .opts { flex: 1; justify-content: flex-end; }
 
 /* A failed job explains itself in visible text and offers the retry the store already allows.
    The reason used to live in a title attribute, which does not exist on touch. */
@@ -466,6 +475,9 @@ main { padding: 4px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px
 .nexttable .fid { font: 12px var(--mono); color: var(--text-3); margin-right: 6px; }
 .nexttable .c-why { color: var(--text-3); font-size: 13px; }
 .nexttable .c-why .failed { color: var(--needs); }
+/* Work in flight is not a failure. Both wore --needs, the "needs attention" orange, so an
+   ordinary queued or running job read as something wrong. */
+.nexttable .c-why .inflight { color: var(--working); }
 /* Desktop only: fixed layout so columns honour their widths and ellipsis works. Without it a
    nowrap cell demands its content width and pushes the table past the viewport. Scoped to the
    width where the table is actually a table — below that the cells are blocks and these widths
