@@ -197,7 +197,7 @@ options must wrap, which 012's overflow sweep will catch.
 - [x] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
       scans
 
-- [ ] Round 1 blocking: an escalated feature must offer no agent-queuing action **at every
+- [x] Round 1 blocking: an escalated feature must offer no agent-queuing action **at every
       width**. `featureOptions`' `reviewing` case adds `approve` (command `review`) regardless of
       `f.question`; gate it there, in `next.ts`, not in CSS. The `>=1100px`-only
       `.btn:not(.primary){display:none}` in `styles.css` both masked this above 1100px and left a
@@ -211,7 +211,7 @@ options must wrap, which 012's overflow sweep will catch.
       and the sheet still call `startControl(featureItem(...))`, which renders nothing when the
       command is null or the feature is blocked — so "Mark done", "Answer" and a blocked feature
       all render as an empty cell there. The task was ticked without this being done.
-- [ ] Round 1 minor: `"never reviewed"` is printed twice in the Why column — once as the
+- [x] Round 1 minor: `"never reviewed"` is printed twice in the Why column — once as the
       recommendation's reason (`next.ts:239`) and once as a fact (`featureFacts`).
 - [ ] Round 1 minor: an in-progress job is coloured with `class="failed"` (`--needs`, the failure
       colour). Give a running job its own colour.
