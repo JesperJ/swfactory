@@ -1,6 +1,6 @@
 ---
 title: Every row says where it stands, what you could do, and what I'd do
-status: planned
+status: building
 priority: P1
 summary: The board offers one button per feature and no idea why. It should show the options a feature actually has, mark one as recommended, and be willing to say "this is waiting on you".
 repo: https://github.com/JesperJ/swfactory
@@ -213,3 +213,4 @@ options must wrap, which 012's overflow sweep will catch.
   `projects/` is mounted. That is recorded as a decision rather than a footnote, since it also
   rules out mounting `.git` into a web-reachable process. Merge state now comes from the runner,
   last in the order, so everything before it ships without it.
+- 2026-10-27 Building on `feature/017-what-should-i-do`.
