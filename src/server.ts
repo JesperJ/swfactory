@@ -165,7 +165,8 @@ export function createApp(cfg: Config) {
       // reads it has to change at once. 005: the rules live here, never in a second copy.
       features: p.features.map((f) => {
         const withVcs = { ...f, vcs: cfg.store.getVcs(p.slug, f.slug) };
-        return { ...withVcs, next: featureAction(withVcs), options: featureOptions(withVcs), facts: featureFacts(withVcs) };
+        const next = featureAction(withVcs);
+        return { ...withVcs, next, options: featureOptions(withVcs), facts: featureFacts(withVcs, next?.reason ?? null) };
       }),
     }));
     return c.json({

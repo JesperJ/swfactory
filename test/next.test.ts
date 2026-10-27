@@ -311,8 +311,35 @@ test("an unanswered question outranks everything and offers no agent", () => {
   assert.equal(top.action, "Answer");
   assert.equal(top.reason, "Job table, or make a retarget cost the clock?", "the row shows the question itself");
   assert.equal(top.command, null, "no sub-command can answer it");
-  // And nothing else on the row may quietly queue a review instead.
-  assert.equal(opts.find((o) => o.recommended && o.command !== null), undefined);
+  // Not "nothing recommended queues an agent" — nothing at all does. Round 1 of 017 found this
+  // assertion scoped to the recommended option while the `reviewing` branch still added a live
+  // "Review again" button beside "Answer", visible and tappable below 1100px, where only a CSS
+  // rule had been hiding it on a desktop. Every option is checked now, because the view renders
+  // every option.
+  assert.deepEqual(
+    opts.filter((o) => o.command !== null),
+    [],
+    "an escalated feature offers no agent-queuing action at all",
+  );
+  assert.deepEqual(opts.map((o) => o.kind), ["escalated"], "and nothing else is on the row");
+
+  // The question does not suppress a pull request: a link is not an action.
+  const withPr = featureOptions(feature({ ...f, prUrl: "https://github.com/a/b/pull/9" }), NOW);
+  assert.deepEqual(withPr.map((o) => o.kind), ["escalated", "link"]);
+  assert.deepEqual(withPr.filter((o) => o.command !== null), []);
+});
+
+test("a fact that only repeats the recommendation is not printed twice", () => {
+  // The Why column prints the reason and the facts together, so "never reviewed · never
+  // reviewed · all 14 criteria met" is what round 1 actually read on the board.
+  const f = feature({ slug: "016-x", status: "reviewing", criteria: { ticked: 14, total: 14 } });
+  const reason = recommended(f)!.reason;
+  assert.equal(reason, "never reviewed");
+  assert.deepEqual(featureFacts(f), ["never reviewed", "all 14 criteria met"], "on its own, the fact stands");
+  assert.deepEqual(featureFacts(f, reason), ["all 14 criteria met"], "beside that reason, it is noise");
+  // And it survives where it is not a duplicate: an escalated feature's reason is the question.
+  const escalated = feature({ ...f, question: "which one?" });
+  assert.ok(featureFacts(escalated, recommended(escalated)!.reason).includes("never reviewed"));
 });
 
 test("Mark done is offered only when it would be honest", () => {

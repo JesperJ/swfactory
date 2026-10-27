@@ -183,7 +183,11 @@ export interface FeatureOption {
 
 // A line of facts, not a verdict. "3 rounds · 1 of 14 unticked" rather than "nearly done":
 // the verdict belongs in the recommendation, where it is labelled as one.
-export function featureFacts(f: Feature): string[] {
+// `reason` is the recommendation's own reason when the caller has one: the Why column prints
+// reason and facts together, and round 1 found "never reviewed · never reviewed" because both
+// derive the same sentence from the same absence. A fact that repeats the verdict is noise, and
+// it costs the one line of space the row has.
+export function featureFacts(f: Feature, reason: string | null = null): string[] {
   const facts: string[] = [];
   if (f.rounds.length) {
     const last = f.rounds[f.rounds.length - 1];
@@ -196,7 +200,7 @@ export function featureFacts(f: Feature): string[] {
   if (total) facts.push(ticked === total ? `all ${total} criteria met` : `${total - ticked} of ${total} criteria unticked`);
   if (f.vcs?.merged) facts.push("merged");
   else if (f.vcs && f.vcs.exists) facts.push("branch not merged");
-  return facts;
+  return reason ? facts.filter((x) => x !== reason) : facts;
 }
 
 // Has the feature been built since its newest review round? `build` writes a Log entry, and a
@@ -232,12 +236,18 @@ export function featureOptions(f: Feature, now = new Date()): FeatureOption[] {
       const unticked = f.criteria.total - f.criteria.ticked;
       const stale = roundIsStale(f);
       // Above starting anything new: finishing what is nearly done beats widening the work.
-      add(
-        "approve",
-        f.rounds.length ? `Review again (round ${f.rounds.length + 1})` : "Review",
-        2.5,
-        f.rounds.length ? (stale ? "reviewed, but built again since" : "reviewed, no round since the last build") : "never reviewed",
-      );
+      // Not while a question is open. Round 1 found this `add` running regardless of
+      // `f.question`, so an escalated feature still carried a live "Review again" button —
+      // 011's exact failure, which burned three reviewer agents on unchanged code. It had been
+      // hidden above 1100px by a CSS rule that drops non-recommended buttons, and was tappable
+      // on a phone. The gate belongs here, where every width and every view reads it.
+      if (!f.question)
+        add(
+          "approve",
+          f.rounds.length ? `Review again (round ${f.rounds.length + 1})` : "Review",
+          2.5,
+          f.rounds.length ? (stale ? "reviewed, but built again since" : "reviewed, no round since the last build") : "never reviewed",
+        );
       // "Mark done" is only offered when it would be honest. Both of these were ticked while
       // false during 015, which is why they are rules rather than judgement.
       if (!unticked && !stale && f.rounds.length && !f.question)
@@ -312,7 +322,7 @@ function featureEntry(p: Project, f: Feature, now: Date): FeatureEntry | null {
     reason: a.reason,
     score: a.score,
     options,
-    facts: featureFacts(f),
+    facts: featureFacts(f, a.reason),
     title: f.title,
     project: p.name,
     projectSlug: p.slug,
