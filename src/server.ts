@@ -8,12 +8,17 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Store, isJobCommand, JOB_COMMANDS } from "./db.ts";
 import { parseHook } from "./hooks.ts";
 import { linkSession } from "./match.ts";
-import { featureAction, lifecycleCounts, rankNext } from "./next.ts";
-import { loadProjects, renderDoc } from "./specs.ts";
+import { featureAction, featureFacts, featureOptions, lifecycleCounts, rankNext } from "./next.ts";
+import { loadProjects, renderDoc, type Project } from "./specs.ts";
 import { checkPassword, isLoggedIn, logIn, logOut, requireBearer, requireUi } from "./auth.ts";
 import { gitSync, watchDir } from "./sync.ts";
 import { buildId } from "./build-id.ts";
 import { Notifier, fromEnv as notifierFromEnv } from "./notify.ts";
+
+// Features as loaded from disk, plus whatever the runner has reported about their branches.
+function withVcs(projects: Project[], store: Store): Project[] {
+  return projects.map((p) => ({ ...p, features: p.features.map((f) => ({ ...f, vcs: store.getVcs(p.slug, f.slug) })) }));
+}
 
 const ROOT = resolve(fileURLToPath(import.meta.url), "../..");
 const PUBLIC = join(ROOT, "public");
@@ -143,17 +148,26 @@ export function createApp(cfg: Config) {
   // their own bearer tokens: the hooks, and the runner's claim/report pair under /api/jobs/.
   // POST /api/jobs itself is the UI queueing work, so it stays behind the cookie.
   const machineRoute = (path: string) =>
-    path === "/api/hooks" || path.startsWith("/api/jobs/") || path === "/api/sessions/idle";
+    path === "/api/hooks" ||
+    path.startsWith("/api/jobs/") ||
+    path === "/api/sessions/idle" ||
+    path.startsWith("/api/vcs/");
   app.use("/api/*", async (c, next) => (machineRoute(c.req.path) ? next() : ui(c, next)));
 
   app.get("/api/state", (c) => {
-    const projects = loadProjects(cfg.specsDir);
+    const projects = withVcs(loadProjects(cfg.specsDir), cfg.store);
     const sessions = cfg.store.list().map((s) => ({ ...s, ...linkSession(s, projects) }));
     // Each feature carries what it needs next, so every view can offer the same button without
     // re-deriving the rules. One mapping, server-side; the UI is told, not left to work it out.
     const annotated = projects.map((p) => ({
       ...p,
-      features: p.features.map((f) => ({ ...f, next: featureAction(f) })),
+      // `options` is what the view renders; `next` stays as the recommended one so nothing that
+      // reads it has to change at once. 005: the rules live here, never in a second copy.
+      features: p.features.map((f) => {
+        const withVcs = { ...f, vcs: cfg.store.getVcs(p.slug, f.slug) };
+        const next = featureAction(withVcs);
+        return { ...withVcs, next, options: featureOptions(withVcs), facts: featureFacts(withVcs, next?.reason ?? null) };
+      }),
     }));
     return c.json({
       projects: annotated,
@@ -215,6 +229,27 @@ export function createApp(cfg: Config) {
     if (!Number.isFinite(hours) || hours < MIN_IDLE_HOURS)
       return c.json({ error: `hours must be a number >= ${MIN_IDLE_HOURS}` }, 400);
     return c.json({ sessions: cfg.store.idleSessions(hours) });
+  });
+
+  // The runner tells the dashboard what only a repository can know. Behind the runner token
+  // because it writes state the UI renders; the shape is fixed and nothing here is executed.
+  app.post("/api/vcs/:project", requireBearer(cfg.runnerToken), async (c) => {
+    const project = c.req.param("project");
+    if (!/^[\w.-]+$/.test(project)) return c.json({ error: "bad project" }, 400);
+    const body = await c.req.json().catch(() => null);
+    if (!body || !Array.isArray(body.features)) return c.json({ error: "features must be an array" }, 400);
+    const rows = body.features
+      .filter((f: unknown): f is Record<string, unknown> => !!f && typeof f === "object")
+      .filter((f: Record<string, unknown>) => typeof f.feature === "string" && /^[\w.-]+$/.test(f.feature))
+      .map((f: Record<string, unknown>) => ({
+        feature: String(f.feature),
+        branch: typeof f.branch === "string" ? f.branch : null,
+        exists: f.exists === true,
+        merged: f.merged === true,
+      }));
+    cfg.store.setVcs(project, rows);
+    notify("specs");
+    return c.json({ ok: true, features: rows.length });
   });
 
   app.get("/api/jobs/next", requireBearer(cfg.runnerToken), (c) => {

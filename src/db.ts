@@ -239,6 +239,22 @@ export class Store {
     return this.db.prepare("UPDATE sessions SET dismissed = 1 WHERE id = ?").run(id).changes > 0;
   }
 
+  // What the runner last reported about a feature's branch. The dashboard has no repository
+  // of its own — only `projects/` is mounted — so this is the only way it can know. Kept in
+  // memory rather than SQLite: it is a cache of something the runner re-reports every tick, and
+  // persisting it would mean serving a merged/unmerged claim from before a restart as if it
+  // were current. See decisions/2026-10-27-vcs-facts-come-from-the-runner.md.
+  private vcsByFeature = new Map<string, { branch: string | null; exists: boolean; merged: boolean }>();
+
+  setVcs(project: string, rows: { feature: string; branch: string | null; exists: boolean; merged: boolean }[]): void {
+    for (const [key] of this.vcsByFeature) if (key.startsWith(`${project}/`)) this.vcsByFeature.delete(key);
+    for (const r of rows) this.vcsByFeature.set(`${project}/${r.feature}`, { branch: r.branch, exists: r.exists, merged: r.merged });
+  }
+
+  getVcs(project: string, feature: string) {
+    return this.vcsByFeature.get(`${project}/${feature}`) ?? null;
+  }
+
   // --- jobs ------------------------------------------------------------------
 
   // Returns the existing job instead of a new one when this feature already has unfinished

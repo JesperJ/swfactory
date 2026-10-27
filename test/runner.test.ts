@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, graceMinutes, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
+import { branchHasOwnCommits, commandFor, defaultBranch, ensureWorktree, findCheckout, graceMinutes, branchFacts, idleCandidates, parseTmuxSession, pruneWorktree, samePath, sessionName, sweepWorktrees, worktreeAge, worktreeFor } from "../scripts/runner.ts";
 import type { IdleSession, Job } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -331,8 +331,8 @@ test("the sweep never collects the detached base tree", () => {
 // before anything else about this path.
 
 const idleFeatures: Feature[] = [
-  { id: "006", slug: "006-ntfy", title: "ntfy", status: "done", priority: null, summary: null, blocked: null, lastLog: null, file: "006-ntfy.md" },
-  { id: "015", slug: "015-finished-sessions", title: "x", status: "building", priority: null, summary: null, blocked: null, lastLog: null, file: "015.md" },
+  { id: "006", slug: "006-ntfy", title: "ntfy", status: "done", priority: null, summary: null, blocked: null, lastLog: null, criteria: { ticked: 0, total: 0 }, rounds: [], prUrl: null, question: null, vcs: null, file: "006-ntfy.md" },
+  { id: "015", slug: "015-finished-sessions", title: "x", status: "building", priority: null, summary: null, blocked: null, lastLog: null, criteria: { ticked: 0, total: 0 }, rounds: [], prUrl: null, question: null, vcs: null, file: "015.md" },
 ];
 const idleProjects: Project[] = [
   { slug: "swfactory", name: "swfactory", status: "active", summary: null, repo: "github.com/jesper/swfactory", repoUrl: null, features: idleFeatures, file: "" },
@@ -577,4 +577,43 @@ test("worktree age is measured from the directory's own mtime, not from work ins
 
   // A path that is not there cannot be judged old, so it is treated as new and left alone.
   assert.equal(worktreeAge(join(dir, "nope")), 0);
+});
+
+// --- what the dashboard cannot see for itself ------------------------------------------------
+
+test("branch facts are read from the real repository, merged and unmerged alike", () => {
+  const repo = repoWithCommit();
+  const g = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" });
+  const base = defaultBranch(repo);
+
+  // One merged, one not, and one feature with no branch at all.
+  for (const slug of ["001-done", "002-open"]) {
+    g("branch", `feature/${slug}`);
+    g("checkout", "-q", `feature/${slug}`);
+    writeFileSync(join(repo, `${slug}.txt`), "x");
+    g("add", "-A");
+    g("commit", "-qm", slug);
+    g("checkout", "-q", base);
+  }
+  g("merge", "-q", "--no-ff", "-m", "merge", "feature/001-done");
+
+  const features = ["001-done", "002-open", "003-no-branch"].map(
+    (slug) => ({ id: slug.slice(0, 3), slug, title: slug, status: "reviewing", priority: null, summary: null, blocked: null, lastLog: null, criteria: { ticked: 0, total: 0 }, rounds: [], prUrl: null, question: null, vcs: null, file: `${slug}.md` }) as Feature,
+  );
+
+  const rows = branchFacts(repo, features);
+  assert.deepEqual(
+    rows,
+    [
+      { feature: "001-done", branch: "feature/001-done", exists: true, merged: true },
+      { feature: "002-open", branch: "feature/002-open", exists: true, merged: false },
+    ],
+    "a feature with no branch is simply not mentioned",
+  );
+});
+
+test("a repository that cannot be read says nothing rather than 'no branches'", () => {
+  // Silence and "nothing is merged" are different claims, and the view renders unknown as
+  // nothing rather than as a guess.
+  assert.deepEqual(branchFacts("/definitely/not/a/repo", []), []);
 });

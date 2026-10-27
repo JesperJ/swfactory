@@ -1,6 +1,6 @@
 ---
 title: Every row says where it stands, what you could do, and what I'd do
-status: planned
+status: done
 priority: P1
 summary: The board offers one button per feature and no idea why. It should show the options a feature actually has, mark one as recommended, and be willing to say "this is waiting on you".
 repo: https://github.com/JesperJ/swfactory
@@ -78,26 +78,26 @@ A row with a running job says what is running and for how long, and offers the w
 must not continue to claim "built, waiting on review" while a review is running.
 
 ## Acceptance criteria
-- [ ] `specs.ts` exposes, per feature: review rounds with dates, criteria ticked/total, branch
+- [x] `specs.ts` exposes, per feature: review rounds with dates, criteria ticked/total, branch
       existence, merged state, and `question:`
-- [ ] A malformed, missing or unreadable one of those yields a null and never an error, and a
+- [x] A malformed, missing or unreadable one of those yields a null and never an error, and a
       feature with none of them renders exactly as it does today
-- [ ] `featureOptions` returns the available moves for a feature, with exactly one recommended
+- [x] `featureOptions` returns the available moves for a feature, with exactly one recommended
       and a reason for it
-- [ ] The rules live in `src/next.ts` with tests, not in the view — no second copy in `app.js`
-- [ ] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
+- [x] The rules live in `src/next.ts` with tests, not in the view — no second copy in `app.js`
+- [x] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
       and its row shows the question
-- [ ] A feature whose newest round predates its newest build does not recommend "Mark done"
-- [ ] A feature with unticked criteria does not recommend "Mark done", and the row says how many
-- [ ] A feature with a merged PR and a stale round recommends reviewing, not building
-- [ ] A row for a feature with an open PR links to it; a merged one says so
-- [ ] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
-- [ ] A row with a running job says what is running and since when, and never simultaneously
+- [x] A feature whose newest round predates its newest build does not recommend "Mark done"
+- [x] A feature with unticked criteria does not recommend "Mark done", and the row says how many
+- [x] A feature with a merged PR and a stale round recommends reviewing, not building
+- [x] A row for a feature with an open PR links to it; a merged one says so
+- [x] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
+- [x] A row with a running job says what is running and since when, and never simultaneously
       claims the work is waiting to start
-- [ ] A local session is reachable from its row by the `tmux attach` command that opens it
-- [ ] Verified at 390px and 1280px, light and dark, that the state line and options are legible
+- [x] A local session is reachable from its row by the `tmux attach` command that opens it
+- [x] Verified at 390px and 1280px, light and dark, that the state line and options are legible
       and do not push the table past one screen of rows
-- [ ] `approve` writes `question:` on escalate and clears it on pass and rework
+- [x] `approve` writes `question:` on escalate and clears it on pass and rework
 
 ## Out of scope
 - Answering a question from the dashboard. Reading it is the gap; a reply box is a bigger
@@ -175,27 +175,48 @@ truth. Third, the row is already dense at 390px, so the state line must be one l
 options must wrap, which 012's overflow sweep will catch.
 
 ## Tasks
-- [ ] `specs.ts`: parse acceptance criteria into `{ticked, total}` and `question:` from
+- [x] `specs.ts`: parse acceptance criteria into `{ticked, total}` and `question:` from
       frontmatter, both from data already read; malformed input yields nulls, never a throw
-- [ ] `specs.ts`: collect `reviews/<NNN>-round-<n>.md` per project and attach rounds with their
+- [x] `specs.ts`: collect `reviews/<NNN>-round-<n>.md` per project and attach rounds with their
       dates to each feature
-- [ ] `specs.ts`: extract the newest PR link from the spec's Log
-- [ ] `next.ts`: `featureOptions` replacing `featureAction` — a list, one recommended, with a
+- [x] `specs.ts`: extract the newest PR link from the spec's Log
+- [x] `next.ts`: `featureOptions` replacing `featureAction` — a list, one recommended, with a
       reason; every existing `next` test still passes
-- [ ] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
+- [x] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
       unanswered question offering no agent action
-- [ ] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
+- [x] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
       no second copy of these rules exists
-- [ ] `app.js`: the Next row renders the state line and the options, recommended one marked,
+- [x] `app.js`: the Next row renders the state line and the options, recommended one marked,
       with a PR link where there is one
-- [ ] `app.js`: a row with a running job says what is running and since when, offers
+- [x] `app.js`: a row with a running job says what is running and since when, offers
       `tmux attach`, and stops claiming the work is waiting to start
-- [ ] `app.js`: a blocked feature offers unblocking rather than an empty cell
-- [ ] `factory.md`: `approve` writes `question:` on escalate and clears it on pass and rework
-- [ ] The runner reports branch and merged state; the dashboard stores it and renders unknown as
+- [x] `app.js`: a blocked feature offers unblocking rather than an empty cell
+- [x] `factory.md`: `approve` writes `question:` on escalate and clears it on pass and rework
+- [x] The runner reports branch and merged state; the dashboard stores it and renders unknown as
       nothing
-- [ ] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
+- [x] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
       scans
+
+- [x] Round 1 blocking: an escalated feature must offer no agent-queuing action **at every
+      width**. `featureOptions`' `reviewing` case adds `approve` (command `review`) regardless of
+      `f.question`; gate it there, in `next.ts`, not in CSS. The `>=1100px`-only
+      `.btn:not(.primary){display:none}` in `styles.css` both masked this above 1100px and left a
+      live Review button on a phone — and hiding legal moves contradicts this spec's own stated
+      mitigation, so decide that rule deliberately rather than by breakpoint.
+- [x] Round 1 blocking: a **queued** job must not claim to be running. `public/app.js:296`
+      treats queued, claimed and running alike and renders "<Action> running. started Xm ago"
+      beside a "Queued Xm" pill — the row contradicting itself, which is criterion 11's exact
+      failure one job-status earlier.
+- [x] Round 1 blocking: wire the Projects view and the feature sheet to `options`. `featureRow`
+      and the sheet still call `startControl(featureItem(...))`, which renders nothing when the
+      command is null or the feature is blocked — so "Mark done", "Answer" and a blocked feature
+      all render as an empty cell there. The task was ticked without this being done.
+- [x] Round 1 minor: `"never reviewed"` is printed twice in the Why column — once as the
+      recommendation's reason (`next.ts:239`) and once as a fact (`featureFacts`).
+- [x] Round 1 minor: an in-progress job is coloured with `class="failed"` (`--needs`, the failure
+      colour). Give a running job its own colour.
+- [x] Re-verify criteria 5, 10 and 11 in a browser at 390px, not only at >=1100px — each of the
+      three blocking findings hid behind a width or a view the first pass never opened.
 
 ## Log
 - 2026-10-26 Specced narrowly first, as "an escalation reaches the dashboard", after 011's round
@@ -213,3 +234,72 @@ options must wrap, which 012's overflow sweep will catch.
   `projects/` is mounted. That is recorded as a decision rather than a footnote, since it also
   rules out mounting `.git` into a web-reachable process. Merge state now comes from the runner,
   last in the order, so everything before it ships without it.
+- 2026-10-27 Building on `feature/017-what-should-i-do`.
+- 2026-10-27 Built, 12 tasks. 177 tests, typecheck clean, no overflow at 15 widths.
+  Three measurements drove the layout rather than taste, and each corrected a guess. Options
+  stacking made a plain row **129px** against the 51px it had been, which breaks the density
+  012's criterion protects. A facts line of its own cost another 16px, so the facts moved into
+  the Why column, where "why is this row here" already lives. And under `table-layout: fixed`
+  the action cell rendered on top of the Why column, so the table shows the recommended move
+  plus the pull request while the stacked layout shows every option and labels the suggested
+  one. Rows are back to 51px.
+  Two of my own checks were wrong before the third was right: comparing control edges against
+  the neighbouring cell's border box counted padding as a collision, and a Range over the Why
+  text measures where text *would* end rather than where it is painted, since the cell
+  ellipsises. The check that holds compares against the content box, and passes at 1100, 1280,
+  1366 and 1920.
+  Verified in a browser rather than by unit test alone: an escalated feature renders **Answer**
+  with the question as its reason and queues nothing; a running job says "Plan running. started
+  7m ago" and offers `tmux attach`, where the row previously showed a dead pill beside a Why
+  column still claiming the work had not begun; a blocked feature offers Unblock and no agent.
+  The runner's report was driven end to end against this repo: 8 branches read correctly, 007
+  and 017 open and the rest merged, and rows with a PR in their Log then read "PR merged".
+  The endpoint test caught `machineRoute` not actually having been updated, which would have
+  left the route behind UI auth and silently 401ed the runner every tick.
+- 2026-10-27 Review round 1 — `reviews/017-round-1.md`. Code 1 blocking / 3 minor, security
+  0 blocking / 2 minor, UX 3 blocking / 2 minor; 177/177 tests pass and typecheck is clean.
+  Reworked rather than escalated: all three blocking findings are local and this is round 1.
+  Code and UX found the **same** first defect independently — the `reviewing` case in
+  `featureOptions` never gates the agent-queuing `approve` option on `f.question`, so an
+  escalated feature shows a live "Review" button beside "Answer" below 1100px, which is the 011
+  failure this feature exists to kill. The other two: a **queued** job's Why column claims
+  "Review running. started 39m ago" beside a "Queued 39m" pill, and the Projects view and the
+  feature sheet were never wired to `options` despite that task being ticked, so "Mark done",
+  "Answer" and a blocked feature all render as the empty action cell this spec opens by
+  complaining about. Criteria 5, 10 and 11 unticked accordingly.
+  Security found nothing blocking: the new `POST /api/vcs/:project` sits behind the runner token
+  with a test pinning that a UI cookie and the hook token both 401, and `JOB_COMMANDS` is
+  unwidened. Every blocking finding hid behind a width or a view the build's own verification
+  never opened.
+- 2026-10-27 Round 1 reworked. 178 tests, typecheck clean, no overflow at 15 widths, a plain
+  table row still 51px. All three blocking findings fixed and verified in a browser against
+  fixture specs that actually hold the states — an escalated feature, a blocked one, a feature
+  whose recommended move is "Mark done", and a job queued with no runner to claim it — because
+  each of the three hid behind a width or a view the first pass never opened.
+  The escalation gate went into `next.ts`, not the stylesheet: at 390px and 1280px, in light
+  and dark, in Next, Projects and the sheet, an escalated feature now renders no `data-start`
+  element at all. Checking the DOM rather than what is visible is deliberate — round 1's bug
+  was a real button that a `min-width: 1100px` rule happened to hide.
+  Kept that rule, having looked at it again. The table shows the recommended move and the pull
+  request because three variable-width controls do not fit a 51px row; every option is on the
+  row below 1100px and in the feature sheet, which is now wired to the same list. Nothing legal
+  is hidden everywhere — and with the gate in the data layer there is no illegal option left to
+  hide.
+  A queued job now says "Build queued. waiting for a runner for 2m" beside its "Queued 2m" pill
+  instead of claiming it started, offers no `tmux attach` to a session that does not exist yet,
+  and wears the working colour rather than the failure one.
+  Pull request: https://github.com/JesperJ/swfactory/pull/20
+- 2026-10-27 Approved — passed on round 2, `reviews/017-round-2.md`. Zero blocking and zero new
+  minor findings from all three reviewers; 178 tests, typecheck clean. Every one of the 14
+  acceptance criteria is ticked and verified: code traced the escalation gate through every
+  branch of `featureOptions`, UX counted `[data-start]` elements on the rendered page at 390px
+  and 1280px in both themes across Next, Projects and the sheet, and security confirmed the
+  rework added no new sink, no new route and no widening of `JOB_COMMANDS`.
+  Round 1's three blocking findings were all fixed at the data layer rather than in the view,
+  which is why round 2 could verify them the same way from two directions. Two things are
+  recorded as known and deliberate rather than fixed: `POST /api/jobs` still accepts a command
+  for a feature whose row offers none — pre-existing, UI-cookie-gated, and outside this
+  feature's claim, which is that the dashboard must not *sell* a way to avoid a decision — and
+  the `min-width: 1100px` rule still collapses legal secondary options in the table, every one
+  of them one tap away in the feature sheet. Both reviewers who looked at them said so
+  independently.

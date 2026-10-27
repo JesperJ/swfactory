@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { featureAction, lifecycleCounts, NEXT_FINISHED_HOURS, rankNext, STALE_DAYS, type LinkedSession } from "../src/next.ts";
+import { featureAction, featureFacts, featureOptions, lifecycleCounts, NEXT_FINISHED_HOURS, rankNext, roundIsStale, STALE_DAYS, type LinkedSession } from "../src/next.ts";
 import { isJobCommand } from "../src/db.ts";
 import type { Feature, Project } from "../src/specs.ts";
 
@@ -16,6 +16,11 @@ function feature(over: Partial<Feature> & { slug: string }): Feature {
     summary: null,
     blocked: null,
     lastLog: null,
+    criteria: { ticked: 0, total: 0 },
+    rounds: [],
+    prUrl: null,
+    question: null,
+    vcs: null,
     file: `${over.slug}.md`,
     ...over,
   };
@@ -150,7 +155,10 @@ test("review work outranks starting anything new", () => {
   const ranked = rankNext(projects, [], NOW);
   assert.equal(ranked[0].feature, "001-review", "finishing beats widening the work");
   assert.equal(ranked[0].action, "Review");
-  assert.equal(ranked[0].reason, "built, waiting on review");
+  // Was "built, waiting on review" for every reviewing feature alike, which is the wording 017
+  // exists to kill: it said the same thing about a feature nobody had read and one on its
+  // third round.
+  assert.equal(ranked[0].reason, "never reviewed");
 });
 
 test("each kind carries the command it actually queues", () => {
@@ -276,4 +284,138 @@ test("the two windows are separate numbers, so tightening one does not move the 
   // displays silently became a change to what the runner destroys.
   assert.equal(NEXT_FINISHED_HOURS, 2);
   assert.notEqual(NEXT_FINISHED_HOURS, 48);
+});
+
+// --- what a feature could do, and what it should ---------------------------------------------
+//
+// One button per feature had to be right every time or it taught you to distrust it. It wasn't:
+// 011 offered "Review it" for a feature already reviewed twice, whose PR had merged weeks
+// earlier, which was sitting on an unanswered question. Pressing it burned three agents on
+// unchanged code.
+
+const recommended = (f: Feature) => featureOptions(f, NOW).find((o) => o.recommended);
+
+test("a feature with none of the new facts behaves exactly as it did before", () => {
+  // The regression that matters: nothing on the board changes for a plain feature.
+  assert.equal(recommended(feature({ slug: "001-a", status: "planned" }))?.action, "Build");
+  assert.equal(recommended(feature({ slug: "001-a", status: "specced" }))?.action, "Plan");
+  assert.equal(recommended(feature({ slug: "001-a", status: "idea" }))?.action, "Spec");
+  assert.equal(recommended(feature({ slug: "001-a", status: "done" })), undefined);
+});
+
+test("an unanswered question outranks everything and offers no agent", () => {
+  const f = feature({ slug: "015-x", status: "reviewing", question: "Job table, or make a retarget cost the clock?" });
+  const opts = featureOptions(f, NOW);
+  const top = opts.find((o) => o.recommended)!;
+  assert.equal(top.kind, "escalated");
+  assert.equal(top.action, "Answer");
+  assert.equal(top.reason, "Job table, or make a retarget cost the clock?", "the row shows the question itself");
+  assert.equal(top.command, null, "no sub-command can answer it");
+  // Not "nothing recommended queues an agent" — nothing at all does. Round 1 of 017 found this
+  // assertion scoped to the recommended option while the `reviewing` branch still added a live
+  // "Review again" button beside "Answer", visible and tappable below 1100px, where only a CSS
+  // rule had been hiding it on a desktop. Every option is checked now, because the view renders
+  // every option.
+  assert.deepEqual(
+    opts.filter((o) => o.command !== null),
+    [],
+    "an escalated feature offers no agent-queuing action at all",
+  );
+  assert.deepEqual(opts.map((o) => o.kind), ["escalated"], "and nothing else is on the row");
+
+  // The question does not suppress a pull request: a link is not an action.
+  const withPr = featureOptions(feature({ ...f, prUrl: "https://github.com/a/b/pull/9" }), NOW);
+  assert.deepEqual(withPr.map((o) => o.kind), ["escalated", "link"]);
+  assert.deepEqual(withPr.filter((o) => o.command !== null), []);
+});
+
+test("a fact that only repeats the recommendation is not printed twice", () => {
+  // The Why column prints the reason and the facts together, so "never reviewed · never
+  // reviewed · all 14 criteria met" is what round 1 actually read on the board.
+  const f = feature({ slug: "016-x", status: "reviewing", criteria: { ticked: 14, total: 14 } });
+  const reason = recommended(f)!.reason;
+  assert.equal(reason, "never reviewed");
+  assert.deepEqual(featureFacts(f), ["never reviewed", "all 14 criteria met"], "on its own, the fact stands");
+  assert.deepEqual(featureFacts(f, reason), ["all 14 criteria met"], "beside that reason, it is noise");
+  // And it survives where it is not a duplicate: an escalated feature's reason is the question.
+  const escalated = feature({ ...f, question: "which one?" });
+  assert.ok(featureFacts(escalated, recommended(escalated)!.reason).includes("never reviewed"));
+});
+
+test("Mark done is offered only when it would be honest", () => {
+  const base = { slug: "001-a", status: "reviewing", rounds: [{ n: 1, date: "2026-10-20" }], lastLog: "2026-10-19" };
+  const has = (over: Partial<Feature>) => featureOptions(feature({ ...base, ...over } as Partial<Feature> & { slug: string }), NOW).some((o) => o.kind === "finish");
+
+  assert.equal(has({ criteria: { ticked: 9, total: 9 } }), true, "reviewed and every criterion met");
+  // Both of these were ticked while false during 015, which is why they are rules.
+  assert.equal(has({ criteria: { ticked: 8, total: 9 } }), false, "a criterion is unticked");
+  assert.equal(
+    has({ criteria: { ticked: 9, total: 9 }, lastLog: "2026-10-21" }),
+    false,
+    "built again since the newest round, so the findings predate the code",
+  );
+  assert.equal(has({ criteria: { ticked: 9, total: 9 }, rounds: [] }), false, "never reviewed at all");
+  assert.equal(
+    has({ criteria: { ticked: 9, total: 9 }, question: "which one?" }),
+    false,
+    "an unanswered question is not a finished feature",
+  );
+});
+
+test("a reviewing feature says which round would be next, and why", () => {
+  const fresh = featureOptions(feature({ slug: "016-x", status: "reviewing" }), NOW)[0];
+  assert.equal(fresh.action, "Review");
+  assert.equal(fresh.reason, "never reviewed");
+
+  const twice = featureOptions(
+    feature({ slug: "011-x", status: "reviewing", rounds: [{ n: 1, date: "2026-10-20" }, { n: 2, date: "2026-10-22" }], lastLog: "2026-10-23" }),
+    NOW,
+  )[0];
+  assert.equal(twice.action, "Review again (round 3)", "and not a bare 'Review it'");
+  assert.equal(twice.reason, "reviewed, but built again since");
+});
+
+test("a blocked feature offers unblocking rather than nothing at all", () => {
+  // Rounds 1 and 2 of 015 both found blocked rows rendering with an empty action cell, in a
+  // view whose whole premise is that every row can be acted on.
+  const opts = featureOptions(feature({ slug: "004-deploy", status: "planned", blocked: "needs a domain" }), NOW);
+  const top = opts.find((o) => o.recommended)!;
+  assert.equal(top.kind, "unblock");
+  assert.equal(top.reason, "needs a domain");
+  assert.equal(top.command, null, "no agent can unblock it");
+  assert.equal(opts.some((o) => o.kind === "build"), false, "and it does not also offer to build");
+});
+
+test("a pull request is a link, never an action", () => {
+  const opts = featureOptions(
+    feature({ slug: "016-x", status: "reviewing", prUrl: "https://github.com/JesperJ/swfactory/pull/19" }),
+    NOW,
+  );
+  const pr = opts.find((o) => o.kind === "link")!;
+  assert.equal(pr.href, "https://github.com/JesperJ/swfactory/pull/19");
+  assert.equal(pr.command, null, "the dashboard does not drive git");
+  assert.equal(pr.recommended, false, "and a link is never the recommendation");
+  assert.equal(pr.action, "Open PR");
+  // Once the runner says it merged, the row says so instead of inviting a click to find out.
+  const merged = featureOptions(
+    feature({ slug: "016-x", status: "reviewing", prUrl: "https://x/pull/1", vcs: { branch: "feature/016-x", exists: true, merged: true } }),
+    NOW,
+  ).find((o) => o.kind === "link")!;
+  assert.equal(merged.action, "PR merged");
+});
+
+test("the facts line states facts, not a verdict", () => {
+  assert.deepEqual(
+    featureFacts(feature({ slug: "015-x", status: "reviewing", rounds: [{ n: 1, date: "2026-10-20" }, { n: 2, date: "2026-10-21" }], lastLog: "2026-10-26", criteria: { ticked: 13, total: 14 } })),
+    ["2 rounds", "round 2 predates the last build", "1 of 14 criteria unticked"],
+  );
+  assert.deepEqual(featureFacts(feature({ slug: "016-x", status: "reviewing" })), ["never reviewed"]);
+  assert.deepEqual(featureFacts(feature({ slug: "001-a", status: "planned" })), [], "nothing to say is said as nothing");
+});
+
+test("cannot-tell is not evidence of staleness", () => {
+  // A round file with no Date, or a spec with no Log, must not make the board claim the
+  // findings are stale — it does not know.
+  assert.equal(roundIsStale(feature({ slug: "a", status: "reviewing", rounds: [{ n: 1, date: null }], lastLog: "2026-10-26" })), false);
+  assert.equal(roundIsStale(feature({ slug: "a", status: "reviewing", rounds: [{ n: 1, date: "2026-10-20" }], lastLog: null })), false);
 });

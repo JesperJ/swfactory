@@ -20,7 +20,7 @@ frontmatter `status:`. One command runs the line:
 | `/factory plan` | writes plan + tasks from the code | `planned` |
 | `/factory build` | implements task by task on `feature/<NNN>-<slug>` | `reviewing` |
 | `/factory review` | three reviewers in parallel, findings to `reviews/` | `reviewing` |
-| `/factory approve` | passes, reworks, or escalates one question | `done` or `building` |
+| `/factory approve` | passes, reworks, or escalates one question | `done`, `building`, or `reviewing` + `question:` |
 | `/factory rework` | sends back with a note | `building` |
 | `/factory status` | overview, and proposes a diff for stale specs | |
 
@@ -29,6 +29,9 @@ Rules:
 - If the plan turns out wrong, update the spec first, then the code.
 - Keep the spec's Tasks and Log current; they are what the dashboard and `/factory status` show.
 - Frontmatter is machine-read: keep `status`, `title`, `priority`, `summary`, `repo` valid YAML.
+- An escalation leaves the feature at `reviewing` and writes its one question to `question:`.
+  Pass and rework clear it. The dashboard reads that field to tell "waiting on you" apart from
+  "nobody has looked at this yet".
 
 ## Finding the specs
 
