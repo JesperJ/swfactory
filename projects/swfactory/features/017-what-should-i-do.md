@@ -1,6 +1,6 @@
 ---
 title: Every row says where it stands, what you could do, and what I'd do
-status: building
+status: reviewing
 priority: P1
 summary: The board offers one button per feature and no idea why. It should show the options a feature actually has, mark one as recommended, and be willing to say "this is waiting on you".
 repo: https://github.com/JesperJ/swfactory
@@ -85,14 +85,14 @@ must not continue to claim "built, waiting on review" while a review is running.
 - [x] `featureOptions` returns the available moves for a feature, with exactly one recommended
       and a reason for it
 - [x] The rules live in `src/next.ts` with tests, not in the view — no second copy in `app.js`
-- [ ] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
+- [x] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
       and its row shows the question
 - [x] A feature whose newest round predates its newest build does not recommend "Mark done"
 - [x] A feature with unticked criteria does not recommend "Mark done", and the row says how many
 - [x] A feature with a merged PR and a stale round recommends reviewing, not building
 - [x] A row for a feature with an open PR links to it; a merged one says so
-- [ ] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
-- [ ] A row with a running job says what is running and since when, and never simultaneously
+- [x] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
+- [x] A row with a running job says what is running and since when, and never simultaneously
       claims the work is waiting to start
 - [x] A local session is reachable from its row by the `tmux attach` command that opens it
 - [x] Verified at 390px and 1280px, light and dark, that the state line and options are legible
@@ -184,7 +184,7 @@ options must wrap, which 012's overflow sweep will catch.
       reason; every existing `next` test still passes
 - [x] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
       unanswered question offering no agent action
-- [ ] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
+- [x] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
       no second copy of these rules exists
 - [x] `app.js`: the Next row renders the state line and the options, recommended one marked,
       with a PR link where there is one
@@ -203,19 +203,19 @@ options must wrap, which 012's overflow sweep will catch.
       `.btn:not(.primary){display:none}` in `styles.css` both masked this above 1100px and left a
       live Review button on a phone — and hiding legal moves contradicts this spec's own stated
       mitigation, so decide that rule deliberately rather than by breakpoint.
-- [ ] Round 1 blocking: a **queued** job must not claim to be running. `public/app.js:296`
+- [x] Round 1 blocking: a **queued** job must not claim to be running. `public/app.js:296`
       treats queued, claimed and running alike and renders "<Action> running. started Xm ago"
       beside a "Queued Xm" pill — the row contradicting itself, which is criterion 11's exact
       failure one job-status earlier.
-- [ ] Round 1 blocking: wire the Projects view and the feature sheet to `options`. `featureRow`
+- [x] Round 1 blocking: wire the Projects view and the feature sheet to `options`. `featureRow`
       and the sheet still call `startControl(featureItem(...))`, which renders nothing when the
       command is null or the feature is blocked — so "Mark done", "Answer" and a blocked feature
       all render as an empty cell there. The task was ticked without this being done.
 - [x] Round 1 minor: `"never reviewed"` is printed twice in the Why column — once as the
       recommendation's reason (`next.ts:239`) and once as a fact (`featureFacts`).
-- [ ] Round 1 minor: an in-progress job is coloured with `class="failed"` (`--needs`, the failure
+- [x] Round 1 minor: an in-progress job is coloured with `class="failed"` (`--needs`, the failure
       colour). Give a running job its own colour.
-- [ ] Re-verify criteria 5, 10 and 11 in a browser at 390px, not only at >=1100px — each of the
+- [x] Re-verify criteria 5, 10 and 11 in a browser at 390px, not only at >=1100px — each of the
       three blocking findings hid behind a width or a view the first pass never opened.
 
 ## Log
@@ -271,3 +271,21 @@ options must wrap, which 012's overflow sweep will catch.
   with a test pinning that a UI cookie and the hook token both 401, and `JOB_COMMANDS` is
   unwidened. Every blocking finding hid behind a width or a view the build's own verification
   never opened.
+- 2026-10-27 Round 1 reworked. 178 tests, typecheck clean, no overflow at 15 widths, a plain
+  table row still 51px. All three blocking findings fixed and verified in a browser against
+  fixture specs that actually hold the states — an escalated feature, a blocked one, a feature
+  whose recommended move is "Mark done", and a job queued with no runner to claim it — because
+  each of the three hid behind a width or a view the first pass never opened.
+  The escalation gate went into `next.ts`, not the stylesheet: at 390px and 1280px, in light
+  and dark, in Next, Projects and the sheet, an escalated feature now renders no `data-start`
+  element at all. Checking the DOM rather than what is visible is deliberate — round 1's bug
+  was a real button that a `min-width: 1100px` rule happened to hide.
+  Kept that rule, having looked at it again. The table shows the recommended move and the pull
+  request because three variable-width controls do not fit a 51px row; every option is on the
+  row below 1100px and in the feature sheet, which is now wired to the same list. Nothing legal
+  is hidden everywhere — and with the gate in the data layer there is no illegal option left to
+  hide.
+  A queued job now says "Build queued. waiting for a runner for 2m" beside its "Queued 2m" pill
+  instead of claiming it started, offers no `tmux attach` to a session that does not exist yet,
+  and wears the working colour rather than the failure one.
+  Pull request: https://github.com/JesperJ/swfactory/pull/20
