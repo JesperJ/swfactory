@@ -1,6 +1,6 @@
 ---
 title: Every row says where it stands, what you could do, and what I'd do
-status: reviewing
+status: done
 priority: P1
 summary: The board offers one button per feature and no idea why. It should show the options a feature actually has, mark one as recommended, and be willing to say "this is waiting on you".
 repo: https://github.com/JesperJ/swfactory
@@ -289,3 +289,17 @@ options must wrap, which 012's overflow sweep will catch.
   instead of claiming it started, offers no `tmux attach` to a session that does not exist yet,
   and wears the working colour rather than the failure one.
   Pull request: https://github.com/JesperJ/swfactory/pull/20
+- 2026-10-27 Approved — passed on round 2, `reviews/017-round-2.md`. Zero blocking and zero new
+  minor findings from all three reviewers; 178 tests, typecheck clean. Every one of the 14
+  acceptance criteria is ticked and verified: code traced the escalation gate through every
+  branch of `featureOptions`, UX counted `[data-start]` elements on the rendered page at 390px
+  and 1280px in both themes across Next, Projects and the sheet, and security confirmed the
+  rework added no new sink, no new route and no widening of `JOB_COMMANDS`.
+  Round 1's three blocking findings were all fixed at the data layer rather than in the view,
+  which is why round 2 could verify them the same way from two directions. Two things are
+  recorded as known and deliberate rather than fixed: `POST /api/jobs` still accepts a command
+  for a feature whose row offers none — pre-existing, UI-cookie-gated, and outside this
+  feature's claim, which is that the dashboard must not *sell* a way to avoid a decision — and
+  the `min-width: 1100px` rule still collapses legal secondary options in the table, every one
+  of them one tap away in the feature sheet. Both reviewers who looked at them said so
+  independently.
