@@ -180,9 +180,9 @@ options must wrap, which 012's overflow sweep will catch.
 - [x] `specs.ts`: collect `reviews/<NNN>-round-<n>.md` per project and attach rounds with their
       dates to each feature
 - [x] `specs.ts`: extract the newest PR link from the spec's Log
-- [ ] `next.ts`: `featureOptions` replacing `featureAction` — a list, one recommended, with a
+- [x] `next.ts`: `featureOptions` replacing `featureAction` — a list, one recommended, with a
       reason; every existing `next` test still passes
-- [ ] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
+- [x] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
       unanswered question offering no agent action
 - [ ] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
       no second copy of these rules exists
