@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { promisify } from "node:util";
-import { loadProjects, normalizeRepo, type Project } from "../src/specs.ts";
+import { loadProjects, normalizeRepo, type Feature, type Project } from "../src/specs.ts";
 import { JOB_COMMANDS, type IdleSession, type Job, type Session } from "../src/db.ts";
 import { linkSession } from "../src/match.ts";
 
@@ -401,6 +401,76 @@ async function reconcile(): Promise<void> {
   }
   sweepWorktrees();
   await endIdleSessions();
+  await reportBranchFacts();
+}
+
+// What the dashboard cannot see for itself. It has no repository — only `projects/` is mounted,
+// read-only — so branch and merge state has to be told to it by something that does. The runner
+// already has the checkout and already asks git which branches are merged, in `pruneWorktree`.
+//
+// Reported every tick rather than on a change, because the runner has no way to notice a merge
+// that happened in a terminal, and a tick is cheap: two git calls per project.
+export function branchFacts(repoPath: string, features: Feature[]): VcsRow[] {
+  let branches: string[] = [];
+  let merged: Set<string>;
+  try {
+    const base = defaultBranch(repoPath);
+    branches = git(repoPath, ["branch", "--format=%(refname:short)", "--list", "feature/*"]).split("\n").map((b) => b.trim()).filter(Boolean);
+    merged = new Set(
+      git(repoPath, ["branch", "--merged", base, "--format=%(refname:short)", "--list", "feature/*"])
+        .split("\n")
+        .map((b) => b.trim())
+        .filter(Boolean),
+    );
+  } catch {
+    return []; // a repository we cannot read says nothing, rather than saying "no branches"
+  }
+
+  const rows: VcsRow[] = [];
+  for (const f of features) {
+    // The branch a feature's work lives on is named for the feature, which is what `build` and
+    // `worktreeFor` both already assume.
+    const branch = branches.find((b) => b === `feature/${f.slug}`) ?? null;
+    if (!branch) continue; // nothing to say about a feature with no branch
+    rows.push({ feature: f.slug, branch, exists: true, merged: merged.has(branch) });
+  }
+  return rows;
+}
+
+interface VcsRow {
+  feature: string;
+  branch: string | null;
+  exists: boolean;
+  merged: boolean;
+}
+
+async function reportBranchFacts(): Promise<void> {
+  let projects: Project[];
+  try {
+    projects = loadProjects(SPECS_DIR);
+  } catch {
+    return;
+  }
+  for (const p of projects) {
+    if (!p.repo) continue;
+    let repoPath: string;
+    try {
+      repoPath = findCheckout(REPO_ROOT, p.repo);
+    } catch {
+      continue; // no checkout on this machine, so nothing to report
+    }
+    const features = branchFacts(repoPath, p.features);
+    try {
+      const res = await fetch(`${BASE}/api/vcs/${encodeURIComponent(p.slug)}`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ features }),
+      });
+      if (!res.ok) console.error(`[runner] vcs report for ${p.slug}: dashboard returned ${res.status}`);
+    } catch (err) {
+      console.error(`[runner] vcs report for ${p.slug} failed:`, (err as Error).message);
+    }
+  }
 }
 
 // A session that finished its turn and was never closed sits in tmux forever. Nothing ends one

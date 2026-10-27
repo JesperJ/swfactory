@@ -495,3 +495,48 @@ test("the idle-sessions endpoint is reachable only with the runner token, and cl
   }
   assert.equal((await app.request("/api/sessions/idle?hours=8", { headers: bearer("run") })).status, 200);
 });
+
+test("only the runner may report branch state, and only a sane shape of it", async () => {
+  // This writes state the UI renders, so it is behind the runner token like the rest of the
+  // machine routes. The dashboard has no repository of its own; this is the only way it learns.
+  const app = setup();
+  const cookie = await login(app);
+  const post = (body: unknown, headers: Record<string, string> = {}) =>
+    app.request("/api/vcs/swfactory", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json", ...headers },
+    });
+
+  assert.equal((await post({ features: [] })).status, 401, "no credential");
+  assert.equal((await post({ features: [] }, { cookie })).status, 401, "a UI cookie is not enough");
+  assert.equal((await post({ features: [] }, { authorization: "Bearer tok" })).status, 401, "nor the hook token");
+
+  const runner = { authorization: "Bearer run" };
+  assert.equal((await post({ features: [] }, runner)).status, 200);
+  assert.equal((await post({ nope: 1 }, runner)).status, 400, "features must be an array");
+  // A project name is a Map key here, never a path, so there is nothing to traverse — but it is
+  // rejected rather than stored, and without the token it never reaches the handler at all.
+  assert.equal((await app.request("/api/vcs/..%2Fetc", { method: "POST", body: "{}", headers: runner })).status, 400);
+  assert.equal((await app.request("/api/vcs/..%2Fetc", { method: "POST", body: "{}" })).status, 401);
+
+  // Junk entries are dropped rather than stored, and flags are booleans or false.
+  const res = await post(
+    {
+      features: [
+        { feature: "015-finished-sessions", branch: "feature/015-finished-sessions", exists: true, merged: true },
+        { feature: "../../etc/passwd", branch: "x", exists: true, merged: true },
+        { nothing: "useful" },
+        null,
+      ],
+    },
+    runner,
+  );
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).features, 1, "only the well-formed row was kept");
+
+  // And it reaches the view.
+  const state = await (await app.request("/api/state", { headers: { cookie } })).json();
+  const f = state.projects.flatMap((p: { features: { slug: string; vcs: unknown }[] }) => p.features).find((x: { slug: string }) => x.slug === "015-finished-sessions");
+  assert.deepEqual(f.vcs, { branch: "feature/015-finished-sessions", exists: true, merged: true });
+});

@@ -191,8 +191,8 @@ options must wrap, which 012's overflow sweep will catch.
 - [x] `app.js`: a row with a running job says what is running and since when, offers
       `tmux attach`, and stops claiming the work is waiting to start
 - [x] `app.js`: a blocked feature offers unblocking rather than an empty cell
-- [ ] `factory.md`: `approve` writes `question:` on escalate and clears it on pass and rework
-- [ ] The runner reports branch and merged state; the dashboard stores it and renders unknown as
+- [x] `factory.md`: `approve` writes `question:` on escalate and clears it on pass and rework
+- [x] The runner reports branch and merged state; the dashboard stores it and renders unknown as
       nothing
 - [ ] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
       scans

@@ -200,14 +200,19 @@ The gate.
 3. Then do **exactly one** of three things.
 
 **Pass** — every acceptance criterion met and no blocking finding.
-Set `status: done`. Add a Log line naming the round file and why it passed. Commit.
+Set `status: done`, and clear `question:` from the frontmatter if it is there. Add a Log line
+naming the round file and why it passed. Commit.
 
 **Rework** — blocking findings that are clear and local, and this is round 1 or 2.
-Set `status: building`. Add a Log line listing the blocking findings as the work to do. Commit,
-then run `build` for this feature with those findings as the task list.
+Set `status: building`, and clear `question:` if it is there — the thing being waited on is gone.
+Add a Log line listing the blocking findings as the work to do. Commit, then run `build` for this
+feature with those findings as the task list.
 
 **Escalate** — anything needing judgement, taste, or money; a blocking finding you don't know
-how to resolve; or a third round. Leave the status at `reviewing`. Add a Log line saying what is
+how to resolve; or a third round. Leave the status at `reviewing`. Write the single question into
+the frontmatter as `question:` — one line, the question itself, no findings. That is what the
+dashboard reads, and without it an escalated feature is indistinguishable in Next from one nobody
+has looked at, which is how a question gets asked and never seen. Add a Log line saying what is
 being asked and why. Commit.
 
 Then put **one specific question** to the user. Not a list of findings — the single decision
