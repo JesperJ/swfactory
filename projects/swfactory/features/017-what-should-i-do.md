@@ -1,6 +1,6 @@
 ---
 title: Every row says where it stands, what you could do, and what I'd do
-status: reviewing
+status: building
 priority: P1
 summary: The board offers one button per feature and no idea why. It should show the options a feature actually has, mark one as recommended, and be willing to say "this is waiting on you".
 repo: https://github.com/JesperJ/swfactory
@@ -85,14 +85,14 @@ must not continue to claim "built, waiting on review" while a review is running.
 - [x] `featureOptions` returns the available moves for a feature, with exactly one recommended
       and a reason for it
 - [x] The rules live in `src/next.ts` with tests, not in the view — no second copy in `app.js`
-- [x] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
+- [ ] A feature at `reviewing` with an unanswered `question:` offers **no** agent-queuing action,
       and its row shows the question
 - [x] A feature whose newest round predates its newest build does not recommend "Mark done"
 - [x] A feature with unticked criteria does not recommend "Mark done", and the row says how many
 - [x] A feature with a merged PR and a stale round recommends reviewing, not building
 - [x] A row for a feature with an open PR links to it; a merged one says so
-- [x] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
-- [x] A row with a running job says what is running and since when, and never simultaneously
+- [ ] A blocked feature offers something — at minimum unblocking it — rather than an empty cell
+- [ ] A row with a running job says what is running and since when, and never simultaneously
       claims the work is waiting to start
 - [x] A local session is reachable from its row by the `tmux attach` command that opens it
 - [x] Verified at 390px and 1280px, light and dark, that the state line and options are legible
@@ -184,7 +184,7 @@ options must wrap, which 012's overflow sweep will catch.
       reason; every existing `next` test still passes
 - [x] `next.ts`: the three rules that were wrong — stale round, unticked criteria, and an
       unanswered question offering no agent action
-- [x] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
+- [ ] `server.ts` + `app.js`: the Projects view and the feature sheet use the options list, so
       no second copy of these rules exists
 - [x] `app.js`: the Next row renders the state line and the options, recommended one marked,
       with a PR link where there is one
@@ -196,6 +196,27 @@ options must wrap, which 012's overflow sweep will catch.
       nothing
 - [x] Verify at 390px and 1280px, light and dark, that nothing overflows and the table still
       scans
+
+- [ ] Round 1 blocking: an escalated feature must offer no agent-queuing action **at every
+      width**. `featureOptions`' `reviewing` case adds `approve` (command `review`) regardless of
+      `f.question`; gate it there, in `next.ts`, not in CSS. The `>=1100px`-only
+      `.btn:not(.primary){display:none}` in `styles.css` both masked this above 1100px and left a
+      live Review button on a phone — and hiding legal moves contradicts this spec's own stated
+      mitigation, so decide that rule deliberately rather than by breakpoint.
+- [ ] Round 1 blocking: a **queued** job must not claim to be running. `public/app.js:296`
+      treats queued, claimed and running alike and renders "<Action> running. started Xm ago"
+      beside a "Queued Xm" pill — the row contradicting itself, which is criterion 11's exact
+      failure one job-status earlier.
+- [ ] Round 1 blocking: wire the Projects view and the feature sheet to `options`. `featureRow`
+      and the sheet still call `startControl(featureItem(...))`, which renders nothing when the
+      command is null or the feature is blocked — so "Mark done", "Answer" and a blocked feature
+      all render as an empty cell there. The task was ticked without this being done.
+- [ ] Round 1 minor: `"never reviewed"` is printed twice in the Why column — once as the
+      recommendation's reason (`next.ts:239`) and once as a fact (`featureFacts`).
+- [ ] Round 1 minor: an in-progress job is coloured with `class="failed"` (`--needs`, the failure
+      colour). Give a running job its own colour.
+- [ ] Re-verify criteria 5, 10 and 11 in a browser at 390px, not only at >=1100px — each of the
+      three blocking findings hid behind a width or a view the first pass never opened.
 
 ## Log
 - 2026-10-26 Specced narrowly first, as "an escalation reaches the dashboard", after 011's round
@@ -235,3 +256,18 @@ options must wrap, which 012's overflow sweep will catch.
   and 017 open and the rest merged, and rows with a PR in their Log then read "PR merged".
   The endpoint test caught `machineRoute` not actually having been updated, which would have
   left the route behind UI auth and silently 401ed the runner every tick.
+- 2026-10-27 Review round 1 — `reviews/017-round-1.md`. Code 1 blocking / 3 minor, security
+  0 blocking / 2 minor, UX 3 blocking / 2 minor; 177/177 tests pass and typecheck is clean.
+  Reworked rather than escalated: all three blocking findings are local and this is round 1.
+  Code and UX found the **same** first defect independently — the `reviewing` case in
+  `featureOptions` never gates the agent-queuing `approve` option on `f.question`, so an
+  escalated feature shows a live "Review" button beside "Answer" below 1100px, which is the 011
+  failure this feature exists to kill. The other two: a **queued** job's Why column claims
+  "Review running. started 39m ago" beside a "Queued 39m" pill, and the Projects view and the
+  feature sheet were never wired to `options` despite that task being ticked, so "Mark done",
+  "Answer" and a blocked feature all render as the empty action cell this spec opens by
+  complaining about. Criteria 5, 10 and 11 unticked accordingly.
+  Security found nothing blocking: the new `POST /api/vcs/:project` sits behind the runner token
+  with a test pinning that a UI cookie and the hook token both 401, and `JOB_COMMANDS` is
+  unwidened. Every blocking finding hid behind a width or a view the build's own verification
+  never opened.
